@@ -1,0 +1,75 @@
+{
+  "name": "tw-ghost",
+  "version": "0.1.0",
+  "description": "Find Tailwind CSS classes that silently generate no CSS in your config (replaced theme scales, prefixes, dropped keys)",
+  "license": "MIT",
+  "author": "Changbae Bang",
+  "repository": { "type": "git", "url": "git+https://github.com/changbaebang/tw-ghost.git" },
+  "homepage": "https://github.com/changbaebang/tw-ghost#readme",
+  "bugs": { "url": "https://github.com/changbaebang/tw-ghost/issues" },
+  "keywords": [
+    "tailwindcss",
+    "tailwind",
+    "css",
+    "lint",
+    "unused-classes",
+    "ghost-classes",
+    "theme",
+    "design-tokens",
+    "ci",
+    "static-analysis"
+  ],
+  "type": "module",
+  "packageManager": "pnpm@8.15.0",
+  "engines": { "node": ">=20" },
+  "bin": { "tw-ghost": "dist/cli.js" },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "README.ko.md", "CHANGELOG.md", "LICENSE"],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "pnpm build && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "pnpm build && pnpm test"
+  },
+  "peerDependencies": {
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.3.0"
+  },
+  "peerDependenciesMeta": {
+    "postcss": { "optional": true }
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1",
+    "postcss-selector-parser": "^7.1.0",
+    "tinyglobby": "^0.2.14"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^22.15.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "3.4.17",
+    "tsup": "^8.5.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
