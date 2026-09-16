@@ -60,7 +60,7 @@
   },
   "dependencies": {
     "picocolors": "^1.1.1",
-    "postcss-selector-parser": "^7.1.0",
+    "postcss-selector-parser": "^7.1.6",
     "tinyglobby": "^0.2.14"
   },
   "devDependencies": {
