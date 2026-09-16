@@ -9,8 +9,8 @@ dependencies:
     specifier: ^1.1.1
     version: 1.1.1
   postcss-selector-parser:
-    specifier: ^7.1.0
-    version: 7.1.5
+    specifier: ^7.1.6
+    version: 7.1.6
   tinyglobby:
     specifier: ^0.2.14
     version: 0.2.17
@@ -1433,8 +1433,8 @@ packages:
       util-deprecate: 1.0.2
     dev: true
 
-  /postcss-selector-parser@7.1.5:
-    resolution: {integrity: sha512-KvvtD7SrlBP7dlgkBghEE3r84CABm5SmV2aNcG4oCA+qDnJ/tvKonFVvwWAyyWUEwxuNawdfEAZKP9zM3oZ2Uw==}
+  /postcss-selector-parser@7.1.6:
+    resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
     engines: {node: '>=4'}
     dependencies:
       cssesc: 3.0.0
