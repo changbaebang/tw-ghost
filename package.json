@@ -4,9 +4,14 @@
   "description": "Find Tailwind CSS classes that silently generate no CSS in your config (replaced theme scales, prefixes, dropped keys)",
   "license": "MIT",
   "author": "Changbae Bang",
-  "repository": { "type": "git", "url": "git+https://github.com/changbaebang/tw-ghost.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/changbaebang/tw-ghost.git"
+  },
   "homepage": "https://github.com/changbaebang/tw-ghost#readme",
-  "bugs": { "url": "https://github.com/changbaebang/tw-ghost/issues" },
+  "bugs": {
+    "url": "https://github.com/changbaebang/tw-ghost/issues"
+  },
   "keywords": [
     "tailwindcss",
     "tailwind",
@@ -21,19 +26,35 @@
   ],
   "type": "module",
   "packageManager": "pnpm@8.15.0",
-  "engines": { "node": ">=20" },
-  "bin": { "tw-ghost": "dist/cli.js" },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "tw-ghost": "dist/cli.js"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "README.md", "README.ko.md", "CHANGELOG.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "README.ko.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public",
@@ -56,7 +77,9 @@
     "tailwindcss": "^3.3.0"
   },
   "peerDependenciesMeta": {
-    "postcss": { "optional": true }
+    "postcss": {
+      "optional": true
+    }
   },
   "dependencies": {
     "picocolors": "^1.1.1",
