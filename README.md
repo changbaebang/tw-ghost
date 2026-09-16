@@ -388,7 +388,8 @@ git push origin vX.Y.Z
 
 The `Release` GitHub Action (`.github/workflows/release.yml`) installs, builds, tests and runs
 `npm publish --provenance --access public` against `https://registry.npmjs.org/` using the
-`NPM_TOKEN` repository secret.
+`NPM_TOKEN` repository secret. `v*` tags are protected by a repository ruleset: only the repository
+admin can create them, so a collaborator's write access cannot trigger a release.
 
 ## License
 
