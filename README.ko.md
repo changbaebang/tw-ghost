@@ -366,8 +366,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-`Release` GitHub Action (`.github/workflows/release.yml`) 이 설치·빌드·테스트 후 저장소 시크릿
-`NPM_TOKEN` 으로 `https://registry.npmjs.org/` 에 `npm publish --provenance --access public` 을 실행한다.
+`Release` GitHub Action (`.github/workflows/release.yml`) 이 설치·빌드·테스트 후 npm **trusted publishing**(GitHub OIDC 신원, 토큰 저장 없음)으로 `https://registry.npmjs.org/` 에 `npm publish --provenance --access public` 을 실행한다.
 `v*` 태그는 저장소 ruleset 으로 보호되어 저장소 admin 만 만들 수 있으므로, 협업자의 write 권한으로는
 릴리스를 트리거할 수 없다.
 
