@@ -65,8 +65,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@types/node": "^22.15.0",
-    "postcss": "^8.5.6",
+    "@types/node": "^26.5.0",
+    "postcss": "^8.5.28",
     "tailwindcss": "3.4.17",
     "tsup": "^8.5.0",
     "typescript": "~5.9.2",
