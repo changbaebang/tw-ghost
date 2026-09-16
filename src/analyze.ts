@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
 import {
-  DEFAULT_SEPARATOR,
   classify,
   collectRoots,
+  DEFAULT_SEPARATOR,
   isPlausibleVariantChain,
   looksUtilityLike,
   splitVariants,
@@ -12,8 +12,8 @@ import {
 import { TwGhostConfigError } from './errors.js';
 import {
   type CandidateOccurrences,
-  type Location,
   createExtractor,
+  type Location,
   scanContent,
 } from './extract.js';
 import { generate, stockConfigFrom } from './generate.js';
