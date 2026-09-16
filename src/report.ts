@@ -1,6 +1,7 @@
 import pc from 'picocolors';
 
 type Colors = ReturnType<typeof pc.createColors>;
+
 import type { Finding, GhostFinding, Report } from './analyze.js';
 
 export interface FormatOptions {

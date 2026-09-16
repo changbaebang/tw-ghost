@@ -13,6 +13,13 @@ updates:
         dependency-type: development
         update-types: [minor, patch]
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (the Go compiler) has no JS compiler API; tsup's d.ts build breaks on it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # tw-ghost analyzes Tailwind v3 configs through the project's own tailwindcss; v4 is a different engine.
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
