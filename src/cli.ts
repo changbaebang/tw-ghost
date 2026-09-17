@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { type ParseArgsConfig, parseArgs } from 'node:util';
 import pc from 'picocolors';
 import { analyze } from './analyze.js';
+import { describeEnvironment, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
 import { formatHuman } from './report.js';
 
@@ -16,6 +17,10 @@ Usage
 
 Options
   -c, --config <path>       tailwind.config.{ts,js,cjs,mjs} (default: walk up from cwd)
+      --tailwind <dir>      resolve "tailwindcss" from this directory instead of the config's
+                            (hoisted / strict monorepos where the config's folder cannot reach it)
+      --env                 print the resolved environment (config, tailwindcss, postcss, globs)
+                            and exit — paste this into bug reports; honours --json
       --json                machine-readable JSON on stdout
       --unknown             also list utility-looking classes that produce no CSS anywhere,
                             and classes whose variant chain this config does not know
@@ -30,7 +35,7 @@ Options
 
 Exit codes
   0  no findings         1  ghosts found (unless --fail-on none)
-  2  usage / config error (bad flag, no config, no files matched, Tailwind v4)
+  2  usage / config error (bad flag, no config, no files matched, unsupported Tailwind version)
 
 Examples
   npx tw-ghost
@@ -55,6 +60,8 @@ function fail(message: string): never {
 async function main(): Promise<never> {
   const options = {
     config: { type: 'string', short: 'c' },
+    tailwind: { type: 'string' },
+    env: { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
     unknown: { type: 'boolean', default: false },
     'max-locations': { type: 'string', default: '3' },
@@ -76,6 +83,13 @@ async function main(): Promise<never> {
 
   if (values.help) return exitAfterWrite(process.stdout, HELP, 0);
   if (values.version) return exitAfterWrite(process.stdout, `${version}\n`, 0);
+  if (values.env) {
+    const env = describeEnvironment({ config: values.config, tailwind: values.tailwind });
+    const text = values.json
+      ? `${JSON.stringify({ version, ...env }, null, 2)}\n`
+      : `${formatEnv(env, version)}\n`;
+    return exitAfterWrite(process.stdout, text, 0);
+  }
   const maxLocationsRaw = values['max-locations'] ?? '3';
   if (!/^\d+$/.test(maxLocationsRaw)) {
     return fail(
@@ -96,7 +110,11 @@ async function main(): Promise<never> {
     unknown: values.unknown,
     maxLocations,
     suggestions: !values['no-suggestions'],
+    tailwind: values.tailwind,
   });
+  for (const warning of report.warnings) {
+    process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
+  }
 
   const output = values.json
     ? `${JSON.stringify({ version, ...report }, null, 2)}\n`

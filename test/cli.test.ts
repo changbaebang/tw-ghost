@@ -26,6 +26,7 @@ describe('cli (dist/cli.js)', () => {
       'configPath',
       'tailwindVersion',
       'extractor',
+      'warnings',
       'filesScanned',
       'candidateCount',
       'summary',

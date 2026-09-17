@@ -9,7 +9,7 @@ import {
   utilityRoot,
 } from '../src/classify.js';
 import { stockConfigFrom } from '../src/generate.js';
-import { assertTailwindV3 } from '../src/project.js';
+import { assertSupportedTailwind, assertTailwindV3, unwrapDefaultExport } from '../src/project.js';
 import { changedThemeKeys, flattenThemeKeys } from '../src/suggest.js';
 
 describe('classify', () => {
@@ -174,14 +174,50 @@ describe('looksUtilityLike', () => {
   });
 });
 
-describe('assertTailwindV3', () => {
-  it('accepts any 3.x version', () => {
-    expect(() => assertTailwindV3('3.3.0')).not.toThrow();
-    expect(() => assertTailwindV3('3.4.17')).not.toThrow();
+describe('assertSupportedTailwind (assertTailwindV3 alias)', () => {
+  it('accepts 3.3.0 and every later 3.x', () => {
+    for (const v of ['3.3.0', '3.3.7', '3.4.0', '3.4.17', '3.4.19', '3.5.0']) {
+      expect(() => assertSupportedTailwind(v), v).not.toThrow();
+      expect(() => assertTailwindV3(v), v).not.toThrow();
+    }
   });
-  it('rejects v4 and v2 with a config error', () => {
-    expect(() => assertTailwindV3('4.1.0')).toThrow(/v3 only/);
-    expect(() => assertTailwindV3('2.2.19')).toThrow(/v3 only/);
+  it('rejects v4 naming the version, the supported range, v3-only and the docs link', () => {
+    expect(() => assertSupportedTailwind('4.1.14')).toThrow(
+      /found 4\.1\.14, tw-ghost supports 3\.3\.x – 3\.4\.x only.*v3-only.*#requirements--compatibility/,
+    );
+  });
+  it('rejects v2 / v1 with an upgrade hint', () => {
+    expect(() => assertSupportedTailwind('2.2.19')).toThrow(
+      /found 2\.2\.19.*upgrade to tailwindcss 3\.3\.0 or newer/,
+    );
+    expect(() => assertSupportedTailwind('1.9.6')).toThrow(/found 1\.9\.6/);
+  });
+  it('rejects 3.0–3.2 with "found x, need >=3.3.0"', () => {
+    for (const v of ['3.0.0', '3.1.8', '3.2.7']) {
+      expect(() => assertSupportedTailwind(v), v).toThrow(
+        new RegExp(`found ${v.replace(/\./g, '\\.')}, need >=3\\.3\\.0.*loadConfig`),
+      );
+    }
+  });
+  it('rejects garbage version strings', () => {
+    expect(() => assertSupportedTailwind('next')).toThrow(/Unsupported Tailwind CSS version/);
+  });
+});
+
+describe('unwrapDefaultExport', () => {
+  it('unwraps { default: config } module records (Tailwind 3.3.0 + ESM config)', () => {
+    const config = { content: ['./src/**/*.html'] };
+    expect(unwrapDefaultExport({ default: config })).toBe(config);
+    expect(unwrapDefaultExport({ default: config, __esModule: true })).toBe(config);
+  });
+  it('leaves real configs, primitives and functions alone', () => {
+    const config = { content: [], theme: { extend: {} }, default: { nope: true } };
+    expect(unwrapDefaultExport(config)).toBe(config);
+    expect(unwrapDefaultExport(null)).toBe(null);
+    expect(unwrapDefaultExport('x')).toBe('x');
+    const fn = () => ({});
+    expect(unwrapDefaultExport(fn)).toBe(fn);
+    expect(unwrapDefaultExport({ default: fn })).toEqual({ default: fn });
   });
 });
 
