@@ -4,6 +4,48 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Preflight checks with actionable exit-2 messages** (no more `unexpected error` + stack trace):
+  Tailwind 4.x / ≤ 2.x (`Unsupported Tailwind CSS version: found 4.1.14, tw-ghost supports
+  3.3.x – 3.4.x only …`, v4 message says the tool is v3-only and links the README), Tailwind
+  3.0–3.2 (`found 3.2.7, need >=3.3.0` — `tailwindcss/loadConfig` appeared in 3.3.0), a 3.3+
+  install missing `loadConfig` / `resolveConfig`, a config that exports a function, a config that
+  exports `null` / a primitive (says what it got), and `resolveConfig` throwing.
+- `--tailwind <dir>`: resolve `tailwindcss` (and `postcss`) from a directory other than the config
+  file's, for layouts where the config's folder cannot reach the install. The "Could not resolve
+  tailwindcss" error now explains where resolution starts and suggests it.
+- `--env` (also `--env --json`): prints the resolved config path, `tailwindcss` version + path,
+  `postcss` version + path, extractor kind, content globs and flags, `prefix` / `separator` /
+  `important` / `darkMode` and warnings — what to paste into a bug report. Exits 2 with the
+  regular preflight message when the project is unsupported.
+- Warnings for degraded runs, printed once on stderr as `tw-ghost: warning: …` and returned in
+  `report.warnings` (new key in `--json`, exit code unaffected): `content.transform` /
+  `content.extract` present (not applied), and the bundled-extractor fallback.
+- README: new **Requirements & compatibility** section (support matrix, what is scanned / not
+  scanned, every exit-2 condition and warning with its message prefix, `--env` example), in
+  English and Korean.
+- Programmatic API: `analyze({ tailwind })`, `loadProject(path, { tailwindDir })`,
+  `describeEnvironment()`, `describeProject()`, `formatEnv()`, `assertSupportedTailwind()`,
+  `contentWarnings()`, `unwrapDefaultExport()`, `MIN_TAILWIND_VERSION`,
+  `SUPPORTED_TAILWIND_RANGE`, `COMPATIBILITY_DOCS`; `LoadedProject` gains `tailwindPackageDir`,
+  `postcssPath`, `postcssPackageDir`, `postcssVersion`, `warnings`.
+- Fixture `content-transform`; `test/preflight.test.ts` builds throwaway projects with a fake
+  `node_modules/tailwindcss` to exercise every version branch.
+
+### Fixed
+
+- ESM configs (`.mjs`, or `.js` under `"type": "module"`) with **Tailwind 3.3.0** were read as
+  `{ default: config }` (3.3.0's `loadConfig` does not unwrap the module record), which ended in
+  `Nothing to scan`. tw-ghost now unwraps the default export itself.
+
+### Changed
+
+- `assertTailwindV3` is kept as a deprecated alias of `assertSupportedTailwind`; it now also
+  rejects 3.0–3.2 (previously those crashed later with `Cannot find module 'tailwindcss/loadConfig'`).
+
 ## [0.1.0] - 2026-09-15
 
 ### Added

@@ -19,10 +19,23 @@ export {
   utilityRoot,
   type Verdict,
 } from './classify.js';
+export { describeEnvironment, describeProject, type EnvReport, formatEnv } from './env.js';
 export { TwGhostConfigError } from './errors.js';
 export { isWholeToken, type Location, scanContent } from './extract.js';
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
-export { assertTailwindV3, contentGlobs, findConfig, loadProject } from './project.js';
+export {
+  assertSupportedTailwind,
+  assertTailwindV3,
+  COMPATIBILITY_DOCS,
+  contentGlobs,
+  contentWarnings,
+  findConfig,
+  type LoadProjectOptions,
+  loadProject,
+  MIN_TAILWIND_VERSION,
+  SUPPORTED_TAILWIND_RANGE,
+  unwrapDefaultExport,
+} from './project.js';
 export { type FormatOptions, formatHuman } from './report.js';
 export { changedThemeKeys, flattenThemeKeys } from './suggest.js';
 export { unescapeCssIdentifier } from './unescape.js';

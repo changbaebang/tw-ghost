@@ -40,6 +40,8 @@ export interface AnalyzeOptions {
   maxLocations?: number | undefined;
   /** Compute replacement suggestions for ghosts. Default: true. */
   suggestions?: boolean | undefined;
+  /** Directory to resolve `tailwindcss` from instead of the config file's directory (`--tailwind`). */
+  tailwind?: string | undefined;
 }
 
 export interface Finding {
@@ -72,6 +74,12 @@ export interface Report {
   configPath: string;
   tailwindVersion: string;
   extractor: 'project' | 'bundled';
+  /**
+   * Degraded-run notices: config features Tailwind applies at build time that tw-ghost does not
+   * (`content.transform` / `content.extract`), or the bundled extractor fallback. The CLI prints
+   * each once on stderr; the exit code is unaffected.
+   */
+  warnings: string[];
   filesScanned: number;
   candidateCount: number;
   summary: Summary;
@@ -140,7 +148,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
       `No tailwind.config.{ts,js,cjs,mjs} found walking up from ${cwd}. Pass --config <path>.`,
     );
   }
-  const project = loadProject(configPath);
+  const project = loadProject(configPath, { tailwindDir: options.tailwind });
   const allowEmpty = options.allowEmpty === true;
 
   const files =
@@ -149,6 +157,12 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
       : await resolveFiles(contentGlobs(project.config), project.configDir, allowEmpty);
 
   const { extract, source: extractor } = createExtractor(project);
+  const warnings = [...project.warnings];
+  if (extractor === 'bundled') {
+    warnings.push(
+      `tailwindcss/lib/lib/defaultExtractor could not be loaded from tailwindcss ${project.tailwindVersion}; using tw-ghost's bundled copy of the v3 extractor (candidate detection may differ from your build).`,
+    );
+  }
   const occurrences: CandidateOccurrences = { locations: new Map() };
   for (const file of files) {
     const text = await readFile(file, 'utf8');
@@ -248,6 +262,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
     configPath,
     tailwindVersion: project.tailwindVersion,
     extractor,
+    warnings,
     filesScanned: files.length,
     candidateCount: candidates.length,
     summary,

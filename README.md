@@ -72,7 +72,8 @@ inherits, and nobody notices until a designer asks why the padding is off.
   judges by actual CSS output. Use both if you can.
 - Detect classes built dynamically at runtime (`` `text-${size}` ``). Tailwind cannot see those
   either — they are broken in production already, not just in this report.
-- Support Tailwind v4 (CSS-first config, no `tailwind.config.js`). It exits with code 2 and a message.
+- Support Tailwind v4 (CSS-first config, no `tailwind.config.js`) or Tailwind older than 3.3. It exits
+  with code 2 and a message naming the version it found (see *Requirements & compatibility*).
 - Report "unknown" classes (custom CSS, plain words, typos) by default — see `--unknown`.
 
 ## Install & usage
@@ -88,10 +89,109 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 npx tw-ghost --json --ignore "^legacy-" --unknown
 ```
 
-Requires Node ≥ 20 and `tailwindcss` ^3.3 installed in the target project (peer dependency).
+Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
 `postcss` ^8 is an *optional* peer: tw-ghost uses the project's `postcss` when one is installed
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
-so a plain `tailwindcss` install is enough.
+so a plain `tailwindcss` install is enough. Not sure it fits your setup? Run `npx tw-ghost --env`
+— it either prints what it resolved or fails with the exact reason (exit 2).
+
+## Requirements & compatibility
+
+tw-ghost drives **your project's own `tailwindcss`** through its public `loadConfig` /
+`resolveConfig` entry points and PostCSS. Everything below follows from that.
+
+### Support matrix
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Tailwind CSS 3.3.x – 3.4.x | ✅ supported | Verified with 3.3.0 and 3.4.19 (3.4.x is what the fixtures use). Any later 3.x is accepted. |
+| Tailwind CSS 3.0 – 3.2 | ❌ exit 2 | No `tailwindcss/loadConfig` before 3.3.0. Message: `found 3.2.7, need >=3.3.0`. |
+| Tailwind CSS 4.x | ❌ exit 2 | CSS-first, no JS config, different generation model. tw-ghost is v3-only. |
+| Tailwind CSS ≤ 2.x | ❌ exit 2 | Predates the entry points tw-ghost needs. |
+| Node.js | ≥ 20 | CI runs 20 and 22; 24 is used in development. On Node ≥ 22.12 a `.ts` config inside a CommonJS package makes *Node* print one `Warning: Failed to load the ES module` line before Tailwind's loader takes over — harmless. |
+| Config file | `tailwind.config.{ts,js,cjs,mjs}` | Auto-detected by walking up from cwd, or `--config`. CJS `module.exports`, ESM `export default`, TypeScript (`satisfies Config`, `import type`) via Tailwind's own jiti-based loader. `import.meta` in a config needs Tailwind ≥ 3.4.2 (or Node ≥ 22.12). A config that exports a **function** is rejected (Tailwind v3 does not support that either). |
+| `content` | array or `{ files, relative, transform, extract }` | Only **string globs** are scanned, resolved from the config file's directory; `{ raw }` entries are ignored. `transform` / `extract` are **not applied** (warning). `relative: true` changes nothing for tw-ghost — that is already how it resolves. |
+| Config features | `presets`, `plugins` (`addUtilities` / `addComponents` / `addVariant` / `matchUtilities`), `prefix`, `separator`, `important` (boolean or selector), `darkMode`, `safelist` (strings and `{ pattern }`), `corePlugins` (object or array), `theme` replace / `extend`, theme sections as functions (`({ theme }) => …`) | All honoured because your Tailwind resolves and runs the config; tw-ghost never reimplements them. Note that plugin-added classes get your `prefix` (Tailwind behaviour), and a safelisted class that is dead in your theme is still a ghost — the safelist only adds candidates, it cannot conjure CSS. |
+| Frameworks | any | Next, Vite, CRA, Astro, SvelteKit, Nuxt, Remix … tw-ghost only reads the config and scans files; no build integration. |
+| Monorepos | ✅ | `--config packages/web/tailwind.config.ts` from the root works; presets `require()`d from workspace packages resolve from the config file. `tailwindcss` is resolved **from the config file's directory upward** (hoisted root installs are fine). If that walk cannot reach it (strict layouts, config in a folder without `node_modules`), pass `--tailwind <dir>`. |
+| Package manager | npm / pnpm / yarn | Irrelevant beyond Tailwind resolution above. |
+| `postcss` | optional peer | Your project's `postcss` if resolvable from the config, otherwise the one `tailwindcss` depends on (verified with a layout where only `tailwindcss` is reachable). |
+| `@config` in CSS (Tailwind ≥ 3.2) | not read | tw-ghost needs the config **file**; point `--config` at the same file your `@config` directive names. |
+| Windows | untested | Globs are written in POSIX form and reported paths are normalised to `/`, but no Windows run has been verified. Reports welcome. |
+
+### What is scanned / not scanned
+
+- **Scanned:** every file the `content` string globs (or your positional globs) match, as raw
+  text, line by line, with Tailwind's own default extractor. Any file kind works — `.tsx`, `.vue`,
+  `.svelte`, `.astro`, `.mdx`, `.html`, `.css`, … — because the extractor is language-agnostic.
+  String literals inside `clsx()`, `cva()`, `tv()` and template literals are seen the same way
+  Tailwind sees them: as text.
+- **`@apply` is not judged as CSS.** A `.css` file matched by your globs is scanned as text, so
+  the class names after `@apply` become candidates like any other token; tw-ghost does not parse
+  CSS or understand `@apply` semantics (Tailwind itself fails the build on `@apply` of a dead
+  class, so these are rarely ghosts in a passing build).
+- **Not seen:** class names assembled at runtime (`` `text-${size}` ``, concatenation) — invisible
+  to Tailwind too; classes that only a `content.transform` / `content.extract` would produce;
+  anything in files your globs do not match. Svelte's `class:z-20={…}` directive is extracted as
+  the token `class:z-20` and judged by its bare utility, so a dead `z-20` is reported under that
+  spelling.
+
+### How it fails
+
+Every condition below exits **2**, writes nothing on stdout, and prints one line on stderr
+starting with `tw-ghost:` — so a mis-set-up run can never pass CI as "0 ghosts".
+
+| Condition | Message starts with |
+| --- | --- |
+| Unknown flag / bad value | `tw-ghost: Unknown option …` / `tw-ghost: --max-locations must be …` / `tw-ghost: --fail-on must be …` |
+| No config found | `tw-ghost: No tailwind.config.{ts,js,cjs,mjs} found walking up from <cwd>. Pass --config <path>.` |
+| `--config` path missing | `tw-ghost: Config file not found: <path>` |
+| `tailwindcss` not resolvable | `tw-ghost: Could not resolve "tailwindcss" from <dir>. Resolution starts at the config file's directory …` (suggests `--tailwind <dir>`) |
+| `--tailwind` directory missing | `tw-ghost: --tailwind directory not found: <dir>` |
+| Tailwind 4.x | `tw-ghost: Unsupported Tailwind CSS version: found 4.1.14, tw-ghost supports 3.3.x – 3.4.x only. Tailwind v4 is CSS-first … tw-ghost is v3-only.` |
+| Tailwind ≤ 2.x | `tw-ghost: Unsupported Tailwind CSS version: found 2.2.19, tw-ghost supports 3.3.x – 3.4.x only. … upgrade to tailwindcss 3.3.0 or newer.` |
+| Tailwind 3.0 – 3.2 | `tw-ghost: Unsupported Tailwind CSS version: found 3.2.7, need >=3.3.0. "tailwindcss/loadConfig" … was added in 3.3.0` |
+| 3.3+ install without `loadConfig` / `resolveConfig` | `tw-ghost: tailwindcss <ver> at <dir> does not provide "tailwindcss/loadConfig" and "tailwindcss/resolveConfig"` |
+| Config throws / `require()` fails | `tw-ghost: Failed to load <config>: <underlying message>` (no stack trace) |
+| Config exports a function | `tw-ghost: <config> exports a function. Tailwind v3 expects a plain config object …` |
+| Config exports null / a primitive | `tw-ghost: <config> did not export a config object (got …)` |
+| `resolveConfig` throws | `tw-ghost: Failed to resolve <config> with tailwindcss/resolveConfig: …` |
+| No string `content` globs and no positional globs | `tw-ghost: Nothing to scan: pass file globs on the command line or add string globs to the config's "content" (or pass --allow-empty).` |
+| Globs match zero files | `tw-ghost: No files matched "<globs>" (resolved from <dir>). …` |
+| Invalid `--ignore` regex | `tw-ghost: Invalid --ignore pattern …` |
+
+Warnings do **not** change the exit code; each is printed once on stderr as
+`tw-ghost: warning: …` and also listed in `report.warnings` (`--json`):
+
+| Warning | When |
+| --- | --- |
+| `content.transform/content.extract are not applied; …` | The config has `content.transform` and/or `content.extract`. Classes produced only by a transform are not seen; classes a transform would remove are still judged. |
+| `tailwindcss/lib/lib/defaultExtractor could not be loaded …; using tw-ghost's bundled copy` | Tailwind's internal extractor path is missing; `extractor` is `bundled` in the report. |
+
+### `--env`: what to paste into a bug report
+
+```
+$ npx tw-ghost --env
+tw-ghost     0.1.0
+node         v22.11.0 (darwin-arm64)
+cwd          /work/acme-web
+config       /work/acme-web/tailwind.config.ts
+tailwindcss  3.4.19  /work/acme-web/node_modules/tailwindcss
+postcss      8.5.6  /work/acme-web/node_modules/postcss
+extractor    project
+content      2 globs (resolved from /work/acme-web)
+               ./src/**/*.{ts,tsx}
+               ./app/**/*.{ts,tsx}
+content opts relative=false transform=false extract=false
+prefix       ""
+separator    ":"
+important    false
+darkMode     "class"
+```
+
+`--env` runs the same preflight as a normal run (config detection, `--config`, `--tailwind`) and
+exits 2 with the same message when it fails, so it is also the quickest way to check whether your
+project is supported. `--env --json` prints the same data as JSON, including `warnings`.
 
 ## CLI options
 
@@ -99,6 +199,8 @@ so a plain `tailwindcss` install is enough.
 | --- | --- | --- |
 | `[globs...]` | config `content` globs | Files to scan. Positional globs are resolved from the current directory and replace the config's `content` list. |
 | `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. |
+| `--tailwind <dir>` | config's directory | Resolve `tailwindcss` (and `postcss`) from this directory instead of the config file's. For layouts where the config's folder cannot reach the install. The config file itself still loads from its own location. |
+| `--env` | off | Print the resolved environment (config, `tailwindcss` version + path, `postcss`, extractor, content globs, warnings) and exit 0 — or exit 2 with the preflight error. Combine with `--json`. |
 | `--json` | off | Print a machine-readable report on stdout. |
 | `--unknown` | off | Also list utility-looking classes that produce no CSS in stock *or* project (typo detection), and classes whose utility works but whose variant chain this config does not know (`unknownVariant`). |
 | `--max-locations <n>` | `3` | Locations kept per class; `0` = all. Must be a non-negative integer (`3abc` is rejected with exit 2). |
@@ -155,6 +257,7 @@ occurrences are whole tokens, so a candidate is never counted inside a longer cl
   "configPath": "/work/acme-web/tailwind.config.ts",
   "tailwindVersion": "3.4.17",
   "extractor": "project",
+  "warnings": [],
   "filesScanned": 2,
   "candidateCount": 49,
   "summary": { "ok": 10, "ghost": 5, "unknown": 34, "unknownVariant": 0, "unknownUtilityLike": 1 },
@@ -193,7 +296,7 @@ to utility-looking names.
 | --- | --- |
 | `0` | No ghosts (or `--fail-on none`), or an empty scan with `--allow-empty`. |
 | `1` | At least one ghost class found. |
-| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load, `tailwindcss` not resolvable, Tailwind v4, **no file matched the globs / nothing to scan** (unless `--allow-empty`). |
+| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). Full list with messages under *How it fails*. |
 
 ## Programmatic API
 
@@ -209,14 +312,17 @@ const report = await analyze({
   allowEmpty: false,            // true → empty report instead of TwGhostConfigError
   maxLocations: 3,
   suggestions: true,
+  tailwind: undefined,          // optional, like --tailwind <dir>
 });
 
+for (const warning of report.warnings) console.warn(warning);
 console.log(formatHuman(report, { color: false }));
 process.exitCode = report.ghosts.length > 0 ? 1 : 0;
 ```
 
-`analyze()` throws `TwGhostConfigError` for the situations that map to exit code 2. Lower-level
-pieces are exported too: `loadProject`, `findConfig`, `classify`, `splitVariants`,
+`analyze()` throws `TwGhostConfigError` for the situations that map to exit code 2.
+`describeEnvironment({ cwd, config, tailwind })` returns what `--env` prints. Lower-level
+pieces are exported too: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`,
 `looksUtilityLike`, `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`,
 `changedThemeKeys`. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
 definitions (`dist/index.d.ts` for `import`, `dist/index.d.cts` for `require`, selected per
@@ -225,8 +331,9 @@ definitions (`dist/index.d.ts` for `import`, `dist/index.d.cts` for `require`, s
 ## How it works
 
 1. **Load the project's Tailwind.** `tailwindcss`, `tailwindcss/loadConfig` (jiti handles `.ts`),
-   `tailwindcss/resolveConfig` and `postcss` are resolved with `createRequire(configPath)`, so the
-   exact version your build uses is the one that judges. Major version ≠ 3 → exit 2.
+   `tailwindcss/resolveConfig` and `postcss` are resolved with `createRequire(configPath)` (or
+   from `--tailwind <dir>`), so the exact version your build uses is the one that judges. A
+   version outside 3.3–3.4 → exit 2 before anything is loaded (see *Requirements & compatibility*).
 2. **Pick files.** Positional globs (relative to cwd) or, by default, the string entries of the
    config's `content` (objects with `raw` are ignored). `node_modules`, `dist`, `.next`, `.git`
    are always skipped; `!negated` globs are honoured. An input set that resolves to zero files
@@ -301,6 +408,11 @@ project:
   restores exit 0 for the rare case where that is intended.
 - **Strict option parsing.** `--max-locations` must be a non-negative integer; `3abc` is rejected
   instead of being read as `3`.
+- **Preflight fails loudly, degradation warns.** Anything that would make the comparison
+  meaningless (unsupported Tailwind, unreachable install, unloadable config) is exit 2 with a
+  message that names what was found. Anything tw-ghost can still run *around* but not reproduce
+  (`content.transform` / `extract`, the bundled extractor fallback) is a one-line stderr warning
+  plus `report.warnings`, never a silent difference.
 - **Tailwind's "No utility classes were detected" warning is suppressed** during tw-ghost's own
   generation runs. It says nothing about your build and would otherwise appear on every run
   where all candidates are ghosts. Only that message is filtered.
@@ -326,9 +438,9 @@ project:
   variant from a typo. The utility *is* dead either way, so the report is still actionable, but
   the fix may be the variant rather than the utility.
 - **`content.transform` / `content.extract`** in your config are not applied: tw-ghost scans raw
-  file text. If your transform *introduces* class names that are not literally in the source,
-  those are not seen (a false negative); if it *removes* text, tw-ghost may report classes your
-  build never sees.
+  file text and prints a warning once per run. If your transform *introduces* class names that
+  are not literally in the source, those are not seen (a false negative); if it *removes* text,
+  tw-ghost may report classes your build never sees.
 - **Theme values that are functions of runtime state** (rare) resolve identically in both runs,
   so they are not an issue — but plugins that emit utilities conditionally on `content` may differ.
 
@@ -358,7 +470,8 @@ project:
 
 - `--format github` (workflow annotations) and SARIF output.
 - Per-file `// tw-ghost-ignore` comments.
-- Optional check of `@apply` inside CSS files.
+- Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
+  include them).
 - Cache candidate extraction between runs for very large monorepos.
 - Tailwind v4 support if a comparable "generate and compare" path becomes available.
 
@@ -374,8 +487,9 @@ pnpm pack:check   # npm pack --dry-run — verify the tarball contents
 ```
 
 Fixtures live in `test/fixtures/` (`replaced-scale`, `prefix`, `clean`, `variants`, `separator`,
-`count`, `no-content`), each with its own `tailwind.config.*` that resolves the repository's dev
-`tailwindcss` 3.4.x.
+`count`, `no-content`, `content-transform`), each with its own `tailwind.config.*` that resolves
+the repository's dev `tailwindcss` 3.4.x. Version preflight tests (`test/preflight.test.ts`)
+build throwaway projects with a fake `node_modules/tailwindcss/package.json` instead.
 
 **Release:** publishing happens **only** through the tag → GitHub Actions flow. Never run
 `npm publish` locally — `prepublishOnly` and `publishConfig.registry` are safety nets, not the
