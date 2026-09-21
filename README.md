@@ -87,6 +87,9 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 
 # CI: machine-readable, ignore a legacy prefix, also list typos and unknown variants
 npx tw-ghost --json --ignore "^legacy-" --unknown
+
+# monorepo: every tailwind.config.* under the current directory, one JSON document
+npx tw-ghost --all-configs --json
 ```
 
 Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
@@ -94,6 +97,38 @@ Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
 so a plain `tailwindcss` install is enough. Not sure it fits your setup? Run `npx tw-ghost --env`
 — it either prints what it resolved or fails with the exact reason (exit 2).
+
+### Monorepos
+
+Without `--config`, tw-ghost loads the **nearest** `tailwind.config.*` walking up from the current
+directory — it never discovers every config in a tree on its own. To check several apps in one run,
+name them or let tw-ghost find them:
+
+```sh
+# recommended from the repository root: every tailwind.config.{ts,js,cjs,mjs} below cwd
+npx tw-ghost --all-configs
+
+# or pick them explicitly: --config is repeatable and accepts globs
+npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.config.js
+```
+
+- Each config is analyzed **independently, from its own directory**: its `content` globs resolve
+  relative to the config file exactly as in a single run, and its own `tailwindcss` install judges
+  it. Positional globs, when given, are resolved from cwd and applied to **every** config.
+- The human output prints one `== apps/web/tailwind.config.ts (N files, K ghosts)` block per
+  config followed by that config's report, then a `total:` line. `--json` switches to the
+  multi-config document described under *Output example*; `--env` prints one block per config.
+- **No cross-config de-duplication.** A shared file (`packages/ui/src/Button.tsx`) that several
+  configs include is scanned by each of them, and a class that is a ghost for two configs is
+  listed under both — that is the point: the same `text-sm` can be alive in `apps/web` and dead
+  in `apps/admin`.
+- Exit code `1` if **any** config has ghosts (subject to `--fail-on`); `2` if **any** config fails
+  to load or scan — that config is reported as `{ config, error }`, the others are still analyzed,
+  and stderr says how many failed. `--all-configs` that finds nothing is also exit `2`, naming the
+  directory it searched. It skips `node_modules`, `dist`, `.next`, `build`, `out` and `coverage`.
+- A base config that only exists to be extended by the apps (no `content` matching anything)
+  fails with *No files matched* / *Nothing to scan*; pass `--allow-empty` or leave it out with an
+  explicit `--config` list.
 
 ## Requirements & compatibility
 
@@ -198,7 +233,8 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | Option | Default | Description |
 | --- | --- | --- |
 | `[globs...]` | config `content` globs | Files to scan. Positional globs are resolved from the current directory and replace the config's `content` list. |
-| `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. |
+| `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. Repeatable, and accepts globs (`'apps/*/tailwind.config.ts'`, `node_modules` skipped); a glob that matches nothing is exit `2`. More than one config → multi-config output (see *Monorepos*). |
+| `--all-configs` | off | Analyze every `tailwind.config.{ts,js,cjs,mjs}` under cwd (skipping `node_modules`, `dist`, `.next`, `build`, `out`, `coverage`). Exit `2` when none is found. Can be combined with `--config`. |
 | `--tailwind <dir>` | config's directory | Resolve `tailwindcss` (and `postcss`) from this directory instead of the config file's. For layouts where the config's folder cannot reach the install. The config file itself still loads from its own location. |
 | `--env` | off | Print the resolved environment (config, `tailwindcss` version + path, `postcss`, extractor, content globs, warnings) and exit 0 — or exit 2 with the preflight error. Combine with `--json`. |
 | `--json` | off | Print a machine-readable report on stdout. |
@@ -290,13 +326,57 @@ The three `unknown*` counters in `summary` are always filled, even without `--un
 The `unknown` and `unknownVariant` arrays are only filled with `--unknown`; `unknown` is filtered
 to utility-looking names.
 
+**Several configs** (`--all-configs`, or `--config` resolving to more than one file): the document
+becomes `{ version, configs, summary, durationMs }`. Each `configs[]` entry is `{ config, …report }`
+— `config` is the path relative to cwd, the rest is exactly the single-config report above minus
+`version` — or `{ config, error }` for a config that failed. `summary` adds up the per-config
+summaries and adds `configs` (entries), `failed`, `filesScanned` and `candidateCount`. With exactly
+**one** config, however it was named (`--config a`, a glob matching one file, `--all-configs` finding
+one), the output stays the single-config document above, byte for byte.
+
+```json
+{
+  "version": "0.3.0",
+  "configs": [
+    {
+      "config": "apps/admin/tailwind.config.js",
+      "configPath": "/work/acme/apps/admin/tailwind.config.js",
+      "tailwindVersion": "3.4.17",
+      "extractor": "project",
+      "warnings": [],
+      "filesScanned": 2,
+      "candidateCount": 27,
+      "summary": { "ok": 4, "ghost": 2, "unknown": 21, "unknownVariant": 0, "unknownUtilityLike": 0 },
+      "ghosts": [ … ],
+      "unknown": [],
+      "unknownVariant": [],
+      "durationMs": 86
+    },
+    { "config": "apps/legacy/tailwind.config.js", "error": "Failed to load /work/acme/apps/legacy/tailwind.config.js: …" },
+    { "config": "apps/web/tailwind.config.ts", … }
+  ],
+  "summary": {
+    "configs": 3,
+    "failed": 1,
+    "filesScanned": 4,
+    "candidateCount": 54,
+    "ok": 8,
+    "ghost": 4,
+    "unknown": 42,
+    "unknownVariant": 0,
+    "unknownUtilityLike": 0
+  },
+  "durationMs": 270
+}
+```
+
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | No ghosts (or `--fail-on none`), or an empty scan with `--allow-empty`. |
 | `1` | At least one ghost class found. |
-| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). Full list with messages under *How it fails*. |
+| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). With several configs: a `--config` glob or `--all-configs` that matches nothing, or **any** config failing (the others are still reported). Full list with messages under *How it fails*. |
 
 ## Programmatic API
 
@@ -321,6 +401,24 @@ process.exitCode = report.ghosts.length > 0 ? 1 : 0;
 ```
 
 `analyze()` throws `TwGhostConfigError` for the situations that map to exit code 2.
+
+Several configs at once — what the CLI does for `--all-configs` / repeated `--config`:
+
+```ts
+import { analyzeMany, formatHumanMany, isConfigFailure, resolveConfigPaths } from 'tw-ghost';
+
+const configs = await resolveConfigPaths({ cwd, all: true }); // or { configs: ['apps/*/tailwind.config.ts'] }
+const multi = await analyzeMany(configs, { cwd, ignore: [/^legacy-/] }); // same options as analyze(), minus `config`
+for (const entry of multi.configs) {
+  if (isConfigFailure(entry)) console.error(entry.config, entry.error); // that config threw; the rest ran
+}
+console.log(formatHumanMany(multi, { color: false }));
+process.exitCode = multi.summary.failed > 0 ? 2 : multi.summary.ghost > 0 ? 1 : 0;
+```
+
+`analyzeMany()` never throws for a single bad config — it records `{ config, error }` and moves on
+— but `resolveConfigPaths()` throws `TwGhostConfigError` when a glob matches nothing or discovery
+finds no config. `analyze()` is unchanged.
 `describeEnvironment({ cwd, config, tailwind })` returns what `--env` prints. Lower-level
 pieces are exported too: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`,
 `looksUtilityLike`, `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`,

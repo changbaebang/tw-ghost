@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Monorepo support: several configs in one run.** `--config` is now repeatable and accepts
+  globs (`--config 'apps/*/tailwind.config.ts'`, `node_modules` skipped); `--all-configs`
+  discovers every `tailwind.config.{ts,js,cjs,mjs}` under cwd (skipping `node_modules`, `dist`,
+  `.next`, `build`, `out`, `coverage`) and exits 2 naming the searched root when it finds none.
+  Auto-detection without `--config` is unchanged (nearest config walking up from cwd). Each config
+  is analyzed independently from its own directory; positional globs apply to every config; a
+  shared file is reported under every config that scans it (no cross-config de-duplication).
+- Multi-config output: human format prints `== <config> (N files, K ghosts)` blocks and a
+  `total:` line; `--json` becomes `{ version, configs: [{ config, …report } | { config, error }],
+  summary, durationMs }` **only when more than one config is analyzed** — a single config keeps
+  the existing document byte for byte. `--env` prints one block (or JSON entry) per config.
+- Exit codes with several configs: `1` if any config has ghosts (`--fail-on` respected), `2` if
+  any config fails to load or scan — that config is reported as `{ config, error }`, the others
+  are still analyzed, stderr says how many failed.
+- Programmatic API: `analyzeMany(configs, options)`, `resolveConfigPaths({ configs, all, cwd })`,
+  `formatHumanMany()`, `isConfigFailure()`, `ALL_CONFIGS_IGNORE_DIRS`, and the `MultiReport` /
+  `MultiSummary` / `ConfigReport` / `ConfigFailure` / `ConfigResult` types. `analyze()` is
+  unchanged.
+- Fixtures `monorepo` (two apps replacing different scales plus a shared package both scan) and
+  `broken-config` (a config that throws); `test/multi.test.ts`.
+
 ## [0.2.0] - 2026-09-17
 
 ### Added

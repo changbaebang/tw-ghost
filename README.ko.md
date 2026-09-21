@@ -87,6 +87,9 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 
 # CI: 기계가 읽을 수 있는 출력, 레거시 접두사 제외, 오타·미지 variant 후보도 나열
 npx tw-ghost --json --ignore "^legacy-" --unknown
+
+# 모노레포: 현재 디렉터리 아래의 모든 tailwind.config.* 를 한 번에, JSON 문서 하나로
+npx tw-ghost --all-configs --json
 ```
 
 Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
@@ -94,6 +97,36 @@ Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer d
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
 내 환경에 맞는지 확실하지 않다면 `npx tw-ghost --env` 를 실행한다 — 해석한 결과를 출력하거나,
 정확한 이유와 함께 실패한다(종료 코드 2).
+
+### 모노레포
+
+`--config` 가 없으면 tw-ghost 는 현재 디렉터리에서 위로 올라가며 **가장 가까운** `tailwind.config.*`
+하나만 로드한다 — 트리 안의 모든 설정을 스스로 찾아 돌지는 않는다. 여러 앱을 한 번에 검사하려면
+직접 지정하거나 찾게 한다:
+
+```sh
+# 저장소 루트에서 권장: cwd 아래의 모든 tailwind.config.{ts,js,cjs,mjs}
+npx tw-ghost --all-configs
+
+# 또는 명시적으로: --config 는 반복 가능하고 glob 을 받는다
+npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.config.js
+```
+
+- 각 설정은 **독립적으로, 자기 디렉터리 기준으로** 분석된다: `content` glob 은 단일 실행과 똑같이
+  설정 파일 기준으로 해석되고, 그 설정이 속한 `tailwindcss` 설치본이 판정한다. 위치 인자 glob 을
+  주면 cwd 기준으로 해석되어 **모든** 설정에 적용된다.
+- 사람이 읽는 출력은 설정마다 `== apps/web/tailwind.config.ts (N files, K ghosts)` 헤더와 그 설정의
+  리포트를 출력한 뒤 `total:` 한 줄로 끝난다. `--json` 은 *출력 예시* 에 있는 다중 설정 문서로
+  바뀌고, `--env` 는 설정마다 블록을 하나씩 출력한다.
+- **설정 간 중복 제거는 없다.** 여러 설정이 포함하는 공용 파일(`packages/ui/src/Button.tsx`)은
+  각 설정이 따로 스캔하고, 두 설정 모두에서 유령인 클래스는 양쪽에 다 나온다 — 그것이 목적이다.
+  같은 `text-sm` 이 `apps/web` 에서는 살아 있고 `apps/admin` 에서는 죽어 있을 수 있다.
+- 종료 코드는 **어느 하나라도** 유령이 있으면 `1`(`--fail-on` 적용), **어느 하나라도** 로드·스캔에
+  실패하면 `2` — 실패한 설정은 `{ config, error }` 로 보고되고 나머지는 계속 분석되며, stderr 에
+  몇 개가 실패했는지 찍힌다. `--all-configs` 가 아무것도 찾지 못해도 `2` 이며 탐색한 디렉터리를
+  알려 준다. `node_modules`, `dist`, `.next`, `build`, `out`, `coverage` 는 건너뛴다.
+- 앱들이 확장하려고만 두는 베이스 설정(`content` 에 맞는 파일 없음)은 *No files matched* /
+  *Nothing to scan* 으로 실패한다. `--allow-empty` 를 주거나 명시적 `--config` 목록에서 빼면 된다.
 
 ## 요구 사항 & 호환성
 
@@ -196,7 +229,8 @@ darkMode     "class"
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
 | `[globs...]` | 설정의 `content` glob | 스캔할 파일. 위치 인자 glob 은 현재 디렉터리 기준으로 해석되며 설정의 `content` 목록을 대체한다. |
-| `-c, --config <path>` | cwd 에서 위로 탐색 | 로드할 `tailwind.config.{ts,js,cjs,mjs}`. |
+| `-c, --config <path>` | cwd 에서 위로 탐색 | 로드할 `tailwind.config.{ts,js,cjs,mjs}`. 반복 가능하고 glob 을 받는다(`'apps/*/tailwind.config.ts'`, `node_modules` 제외). 아무것도 맞지 않는 glob 은 종료 코드 `2`. 설정이 둘 이상이면 다중 설정 출력(*모노레포* 참고). |
+| `--all-configs` | off | cwd 아래의 모든 `tailwind.config.{ts,js,cjs,mjs}` 를 분석(`node_modules`, `dist`, `.next`, `build`, `out`, `coverage` 제외). 하나도 없으면 종료 코드 `2`. `--config` 와 함께 쓸 수 있다. |
 | `--tailwind <dir>` | 설정 파일 디렉터리 | `tailwindcss`(와 `postcss`)를 설정 파일 디렉터리 대신 이 디렉터리에서 해석. 설정 폴더에서 설치본에 닿지 못하는 레이아웃용. 설정 파일 자체는 여전히 제 위치에서 로드된다. |
 | `--env` | 꺼짐 | 해석한 환경(설정, `tailwindcss` 버전 + 경로, `postcss`, extractor, content glob, 경고)을 출력하고 0 으로 종료 — 또는 사전 점검 오류와 함께 2 로 종료. `--json` 과 조합 가능. |
 | `--json` | 꺼짐 | stdout 에 기계가 읽을 수 있는 리포트 출력. |
@@ -286,13 +320,57 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 `unknown` 과 `unknownVariant` 배열은 `--unknown` 을 줄 때만 채워지며, `unknown` 은 유틸리티 모양
 이름만 남긴다.
 
+**설정이 여러 개일 때** (`--all-configs`, 또는 둘 이상의 파일로 해석되는 `--config`): 문서는
+`{ version, configs, summary, durationMs }` 가 된다. `configs[]` 의 각 항목은 `{ config, …report }`
+— `config` 는 cwd 기준 상대 경로, 나머지는 위의 단일 설정 리포트에서 `version` 만 뺀 것 — 이거나,
+실패한 설정이면 `{ config, error }` 다. `summary` 는 설정별 summary 를 합산하고 `configs`(항목 수),
+`failed`, `filesScanned`, `candidateCount` 를 더한다. 설정이 정확히 **하나**면 어떻게 지정했든
+(`--config a`, 파일 하나에 맞는 glob, 하나만 찾은 `--all-configs`) 출력은 위의 단일 설정 문서와
+바이트 단위로 같다.
+
+```json
+{
+  "version": "0.3.0",
+  "configs": [
+    {
+      "config": "apps/admin/tailwind.config.js",
+      "configPath": "/work/acme/apps/admin/tailwind.config.js",
+      "tailwindVersion": "3.4.17",
+      "extractor": "project",
+      "warnings": [],
+      "filesScanned": 2,
+      "candidateCount": 27,
+      "summary": { "ok": 4, "ghost": 2, "unknown": 21, "unknownVariant": 0, "unknownUtilityLike": 0 },
+      "ghosts": [ … ],
+      "unknown": [],
+      "unknownVariant": [],
+      "durationMs": 86
+    },
+    { "config": "apps/legacy/tailwind.config.js", "error": "Failed to load /work/acme/apps/legacy/tailwind.config.js: …" },
+    { "config": "apps/web/tailwind.config.ts", … }
+  ],
+  "summary": {
+    "configs": 3,
+    "failed": 1,
+    "filesScanned": 4,
+    "candidateCount": 54,
+    "ok": 8,
+    "ghost": 4,
+    "unknown": 42,
+    "unknownVariant": 0,
+    "unknownUtilityLike": 0
+  },
+  "durationMs": 270
+}
+```
+
 ## 종료 코드
 
 | 코드 | 의미 |
 | --- | --- |
 | `0` | 유령 클래스 없음 (또는 `--fail-on none`), 또는 `--allow-empty` 를 준 빈 스캔. |
 | `1` | 유령 클래스가 하나 이상 발견됨. |
-| `2` | 사용법 또는 설정 오류: 잘못된 플래그·값(예: 정수가 아닌 `--max-locations`), 설정 파일 없음, 설정 로드 실패 또는 함수 export, `tailwindcss` 를 찾을 수 없음, 지원하지 않는 Tailwind 버전(4.x, ≤ 2.x, 3.0–3.2), **glob 에 일치하는 파일 없음 / 스캔할 것 없음** (`--allow-empty` 가 없을 때). 메시지를 포함한 전체 목록은 *실패하는 방식* 참고. |
+| `2` | 사용법 또는 설정 오류: 잘못된 플래그·값(예: 정수가 아닌 `--max-locations`), 설정 파일 없음, 설정 로드 실패 또는 함수 export, `tailwindcss` 를 찾을 수 없음, 지원하지 않는 Tailwind 버전(4.x, ≤ 2.x, 3.0–3.2), **glob 에 일치하는 파일 없음 / 스캔할 것 없음** (`--allow-empty` 가 없을 때). 설정이 여러 개일 때: 아무것도 맞지 않는 `--config` glob 이나 `--all-configs`, 또는 **어느 하나라도** 실패한 설정(나머지는 계속 보고된다). 메시지를 포함한 전체 목록은 *실패하는 방식* 참고. |
 
 ## 프로그래밍 API
 
@@ -317,6 +395,24 @@ process.exitCode = report.ghosts.length > 0 ? 1 : 0;
 ```
 
 `analyze()` 는 종료 코드 2 에 해당하는 상황에서 `TwGhostConfigError` 를 던진다.
+
+설정 여러 개를 한 번에 — CLI 가 `--all-configs` / 반복된 `--config` 에서 하는 일:
+
+```ts
+import { analyzeMany, formatHumanMany, isConfigFailure, resolveConfigPaths } from 'tw-ghost';
+
+const configs = await resolveConfigPaths({ cwd, all: true }); // 또는 { configs: ['apps/*/tailwind.config.ts'] }
+const multi = await analyzeMany(configs, { cwd, ignore: [/^legacy-/] }); // analyze() 와 같은 옵션, `config` 만 제외
+for (const entry of multi.configs) {
+  if (isConfigFailure(entry)) console.error(entry.config, entry.error); // 이 설정은 실패, 나머지는 실행됨
+}
+console.log(formatHumanMany(multi, { color: false }));
+process.exitCode = multi.summary.failed > 0 ? 2 : multi.summary.ghost > 0 ? 1 : 0;
+```
+
+`analyzeMany()` 는 설정 하나가 잘못됐다고 던지지 않고 `{ config, error }` 로 기록한 뒤 넘어간다.
+반면 `resolveConfigPaths()` 는 glob 이 아무것도 맞지 않거나 탐색 결과가 없으면 `TwGhostConfigError`
+를 던진다. `analyze()` 는 그대로다.
 `describeEnvironment({ cwd, config, tailwind })` 는 `--env` 가 출력하는 내용을 반환한다. 하위 구성 요소도
 export 된다: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`, `looksUtilityLike`,
 `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`, `changedThemeKeys`.
