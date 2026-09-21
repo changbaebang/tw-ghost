@@ -8,6 +8,45 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `--format <human|json|github>` (default `human`). `--json` stays as an alias for `--format json`.
+  `github` prints one `::error file=…,line=…,col=…,title=tw-ghost::<class> produces no CSS in this
+  Tailwind config — try: …` workflow-command annotation per ghost **occurrence** (every location,
+  `--max-locations` is ignored), `file=` relative to `GITHUB_WORKSPACE` when set, `%` / CR / LF
+  (and `,` / `:` in properties) escaped per the spec, `--unknown` findings as `::warning` with
+  title `tw-ghost (unknown)`, and a `tw-ghost: N ghost classes, M occurrences` summary on stderr.
+  Exit codes unchanged.
+- `--max-annotations <n>` (default `50`, `0` = all): caps the `github` output and ends it with
+  `::notice::tw-ghost: K more annotations omitted` — GitHub shows only 10 annotations per level per
+  step / 50 per job.
+- Programmatic API: `formatGithub()`, `DEFAULT_MAX_ANNOTATIONS`, `GithubFormatOptions`,
+  `GithubFormatResult`.
+- README: **CI** subsection with a minimal workflow step, in English and Korean.
+- **Monorepo support: several configs in one run.** `--config` is now repeatable and accepts
+  globs (`--config 'apps/*/tailwind.config.ts'`, `node_modules` skipped); `--all-configs`
+  discovers every `tailwind.config.{ts,js,cjs,mjs}` under cwd (skipping `node_modules`, `dist`,
+  `.next`, `build`, `out`, `coverage`) and exits 2 naming the searched root when it finds none.
+  Auto-detection without `--config` is unchanged (nearest config walking up from cwd). Each config
+  is analyzed independently from its own directory; positional globs apply to every config; a
+  shared file is reported under every config that scans it (no cross-config de-duplication).
+- Multi-config output: human format prints `== <config> (N files, K ghosts)` blocks and a
+  `total:` line; `--json` becomes `{ version, configs: [{ config, …report } | { config, error }],
+  summary, durationMs }` **only when more than one config is analyzed** — a single config keeps
+  the existing document byte for byte. `--env` prints one block (or JSON entry) per config.
+- Exit codes with several configs: `1` if any config has ghosts (`--fail-on` respected), `2` if
+  any config fails to load or scan — that config is reported as `{ config, error }`, the others
+  are still analyzed, stderr says how many failed.
+- Programmatic API: `analyzeMany(configs, options)`, `resolveConfigPaths({ configs, all, cwd })`,
+  `formatHumanMany()`, `isConfigFailure()`, `ALL_CONFIGS_IGNORE_DIRS`, and the `MultiReport` /
+  `MultiSummary` / `ConfigReport` / `ConfigFailure` / `ConfigResult` types. `analyze()` is
+  unchanged.
+- Fixtures `monorepo` (two apps replacing different scales plus a shared package both scan) and
+  `broken-config` (a config that throws); `test/multi.test.ts`.
+- `--fix-map-init <file>` writes a fix-map draft from the current ghosts (bare utility → single suggestion,
+  candidate list, or `null`); `--fix-map <file>` applies a decided map — replacing or removing every
+  occurrence, carrying variants / `!` / `-` over, whole-token only, dry run by default, `--write` to apply.
+  Exit 1 while any ghost remains unmapped. JSON: `{ "fix": { write, edits, files, unused, unmapped } }`.
+- Report: `separator` (top level) and `files` per ghost (all files the class occurs in, never clipped).
+- Programmatic: `applyFixMap`, `applyFixMapToText`, `draftFixMap`, `parseFixMap`, `replacementFor`, `formatFix`.
 - `--unknown-all`: with `--unknown`, put every raw unknown token in the list (and in the `unknown`
   JSON array) instead of the utility-like subset. Programmatic: `analyze({ unknownAll: true })`,
   `formatHuman(report, { unknownAll: true })`.

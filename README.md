@@ -88,13 +88,77 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 
 # CI: machine-readable, ignore a legacy prefix, also list typos and unknown variants
 npx tw-ghost --json --ignore "^legacy-" --unknown
+
+# monorepo: every tailwind.config.* under the current directory, one JSON document
+npx tw-ghost --all-configs --json
 ```
+
+### CI
+
+In a GitHub Actions step, `--format github` turns every ghost occurrence into an inline
+annotation on the pull request (the exit code is the same as for the other formats, so the step
+still fails):
+
+```yaml
+- run: npx tw-ghost --format github
+```
+
+Each line is a workflow command, one per occurrence, with `file=` relative to `GITHUB_WORKSPACE`
+(or to the current directory when the file is outside it / the variable is unset):
+
+```
+::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m
+```
+
+`unknown` / `unknownVariant` findings are only annotated with `--unknown`, as `::warning`
+with the title `tw-ghost (unknown)`. `%`, CR and LF are escaped in every message and `,` / `:`
+additionally in `file=`, per the workflow-command spec. A one-line summary
+(`tw-ghost: 5 ghost classes, 8 occurrences`) goes to stderr so it does not become an annotation.
+
+GitHub only surfaces **10 annotations of each level (error / warning / notice) per step, and
+50 per job** in the checks UI; the rest are still in the log but not shown inline
+([limits documented in `actions/toolkit`](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations)).
+`--max-annotations` (default `50`) caps what is printed and ends the output with
+`::notice::tw-ghost: K more annotations omitted` so the cut is visible. `--json` is unchanged and
+remains the format for tooling.
 
 Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
 `postcss` ^8 is an *optional* peer: tw-ghost uses the project's `postcss` when one is installed
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
 so a plain `tailwindcss` install is enough. Not sure it fits your setup? Run `npx tw-ghost --env`
 — it either prints what it resolved or fails with the exact reason (exit 2).
+
+### Monorepos
+
+Without `--config`, tw-ghost loads the **nearest** `tailwind.config.*` walking up from the current
+directory — it never discovers every config in a tree on its own. To check several apps in one run,
+name them or let tw-ghost find them:
+
+```sh
+# recommended from the repository root: every tailwind.config.{ts,js,cjs,mjs} below cwd
+npx tw-ghost --all-configs
+
+# or pick them explicitly: --config is repeatable and accepts globs
+npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.config.js
+```
+
+- Each config is analyzed **independently, from its own directory**: its `content` globs resolve
+  relative to the config file exactly as in a single run, and its own `tailwindcss` install judges
+  it. Positional globs, when given, are resolved from cwd and applied to **every** config.
+- The human output prints one `== apps/web/tailwind.config.ts (N files, K ghosts)` block per
+  config followed by that config's report, then a `total:` line. `--json` switches to the
+  multi-config document described under *Output example*; `--env` prints one block per config.
+- **No cross-config de-duplication.** A shared file (`packages/ui/src/Button.tsx`) that several
+  configs include is scanned by each of them, and a class that is a ghost for two configs is
+  listed under both — that is the point: the same `text-sm` can be alive in `apps/web` and dead
+  in `apps/admin`.
+- Exit code `1` if **any** config has ghosts (subject to `--fail-on`); `2` if **any** config fails
+  to load or scan — that config is reported as `{ config, error }`, the others are still analyzed,
+  and stderr says how many failed. `--all-configs` that finds nothing is also exit `2`, naming the
+  directory it searched. It skips `node_modules`, `dist`, `.next`, `build`, `out` and `coverage`.
+- A base config that only exists to be extended by the apps (no `content` matching anything)
+  fails with *No files matched* / *Nothing to scan*; pass `--allow-empty` or leave it out with an
+  explicit `--config` list.
 
 ## Requirements & compatibility
 
@@ -199,10 +263,13 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | Option | Default | Description |
 | --- | --- | --- |
 | `[globs...]` | config `content` globs | Files to scan. Positional globs are resolved from the current directory and replace the config's `content` list. |
-| `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. |
+| `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. Repeatable, and accepts globs (`'apps/*/tailwind.config.ts'`, `node_modules` skipped); a glob that matches nothing is exit `2`. More than one config → multi-config output (see *Monorepos*). |
+| `--all-configs` | off | Analyze every `tailwind.config.{ts,js,cjs,mjs}` under cwd (skipping `node_modules`, `dist`, `.next`, `build`, `out`, `coverage`). Exit `2` when none is found. Can be combined with `--config`. |
 | `--tailwind <dir>` | config's directory | Resolve `tailwindcss` (and `postcss`) from this directory instead of the config file's. For layouts where the config's folder cannot reach the install. The config file itself still loads from its own location. |
 | `--env` | off | Print the resolved environment (config, `tailwindcss` version + path, `postcss`, extractor, content globs, warnings) and exit 0 — or exit 2 with the preflight error. Combine with `--json`. |
-| `--json` | off | Print a machine-readable report on stdout. |
+| `--format <human\|json\|github>` | `human` | Output format. `github` prints one `::error` [workflow-command annotation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) per ghost **occurrence** (every location, `--max-locations` is ignored) plus a one-line summary on stderr; see *CI*. |
+| `--json` | off | Alias for `--format json`: a machine-readable report on stdout. Unchanged. |
+| `--max-annotations <n>` | `50` | `github` only: annotations printed before the rest are folded into one `::notice::tw-ghost: K more annotations omitted`; `0` = all. |
 | `--unknown` | off | Also list the **utility-like** unknowns — classes that produce no CSS in stock *or* project but whose prefix is a Tailwind utility and whose value looks like one it could take (`text-mm`, `px-13`, `rounded-xll`; typos and dead tokens) — sorted by occurrence count, then name; plus classes whose utility works but whose variant chain this config does not know (`unknownVariant`). Identifiers that merely share a root (`my-page`, `no-op`, `bottom-start`) are not shown. |
 | `--unknown-all` | off | With `--unknown`: list every raw unknown token instead of the utility-like subset (every word, identifier and URL the extractor saw — on a real app this is tens of thousands of lines). Same sort order. |
 | `--max-locations <n>` | `3` | Locations kept per class; `0` = all. Must be a non-negative integer (`3abc` is rejected with exit 2). |
@@ -210,6 +277,9 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | `--allow-empty` | off | Exit `0` with an empty report when no file matches / nothing is configured to scan. Without it that is exit `2`, so a mistyped glob cannot silently pass CI. |
 | `--fail-on <ghost\|none>` | `ghost` | What turns the exit code into `1`. |
 | `--no-suggestions` | off | Skip the replacement search (faster on huge themes). |
+| `--fix-map-init <file>` | – | Write a **fix-map draft** for the current ghosts and exit 0: one key per bare utility (variants stripped), value = the single suggestion, a list of candidates, or `null`. Refuses to overwrite an existing file. |
+| `--fix-map <file>` | – | Apply a fix map (see *Fixing ghosts*): replace or remove every occurrence of each mapped ghost, carrying variants, `!` and `-` over. **Dry run** unless `--write`. Exit 1 when ghosts remain unmapped (`--fail-on none` → 0). |
+| `--write` | off | With `--fix-map`: write the changed files. |
 | `--no-color` | off | Disable ANSI colors (`NO_COLOR` is respected too). |
 | `-h, --help` / `-v, --version` | | |
 
@@ -295,12 +365,108 @@ in which case it holds every raw unknown (`summary.unknown` entries); both are s
 descending, then `class`. The two summary counters are the same either way, so a consumer can
 tell which list it got from `unknown.length`.
 
+**Several configs** (`--all-configs`, or `--config` resolving to more than one file): the document
+becomes `{ version, configs, summary, durationMs }`. Each `configs[]` entry is `{ config, …report }`
+— `config` is the path relative to cwd, the rest is exactly the single-config report above minus
+`version` — or `{ config, error }` for a config that failed. `summary` adds up the per-config
+summaries and adds `configs` (entries), `failed`, `filesScanned` and `candidateCount`. With exactly
+**one** config, however it was named (`--config a`, a glob matching one file, `--all-configs` finding
+one), the output stays the single-config document above, byte for byte.
+
+```json
+{
+  "version": "0.3.0",
+  "configs": [
+    {
+      "config": "apps/admin/tailwind.config.js",
+      "configPath": "/work/acme/apps/admin/tailwind.config.js",
+      "tailwindVersion": "3.4.17",
+      "extractor": "project",
+      "warnings": [],
+      "filesScanned": 2,
+      "candidateCount": 27,
+      "summary": { "ok": 4, "ghost": 2, "unknown": 21, "unknownVariant": 0, "unknownUtilityLike": 0 },
+      "ghosts": [ … ],
+      "unknown": [],
+      "unknownVariant": [],
+      "durationMs": 86
+    },
+    { "config": "apps/legacy/tailwind.config.js", "error": "Failed to load /work/acme/apps/legacy/tailwind.config.js: …" },
+    { "config": "apps/web/tailwind.config.ts", … }
+  ],
+  "summary": {
+    "configs": 3,
+    "failed": 1,
+    "filesScanned": 4,
+    "candidateCount": 54,
+    "ok": 8,
+    "ghost": 4,
+    "unknown": 42,
+    "unknownVariant": 0,
+    "unknownUtilityLike": 0
+  },
+  "durationMs": 270
+}
+```
+
+## Fixing ghosts
+
+tw-ghost does not guess replacements on its own: `text-sm` may mean `text-l` in one design system and
+`text-m` in another, and that is a design decision, not a string match. Instead it turns the decision
+into a small JSON file your team makes once and reuses across apps.
+
+```sh
+# 1. draft a map from the current ghosts
+npx tw-ghost --fix-map-init fixes.json
+```
+
+```jsonc
+// fixes.json (draft): keys are bare utilities — variants, "!" and "-" are handled for you
+{
+  "rounded":  ["rounded-0", "rounded-2", "rounded-4", "rounded-8"],   // several candidates: pick one
+  "text-sm":  ["text-l", "text-m", "text-s"],
+  "z-10":     "z-content-1",                                          // exactly one suggestion
+  "min-w-px": null                                                    // no candidate: null = remove
+}
+```
+
+Reduce every array to one string (or `null` to delete the class), then:
+
+```sh
+# 2. see what would change (nothing is written)
+npx tw-ghost --fix-map fixes.json
+
+# 3. apply
+npx tw-ghost --fix-map fixes.json --write
+```
+
+Rules the fixer follows:
+
+- **Whole tokens only.** `text-sm` is never touched inside `md:text-sm` (that one is handled through its own
+  bare utility), `legacy-text-sm` or `text-sm/50`; `p-3` is never touched inside `p-30`, `p-3.5`, `!p-3`.
+- **Variants, `!` and `-` are carried over.** `{ "mt-3": "mt-4" }` turns `lg:!-mt-3` into `lg:!-mt-4`.
+  A custom `separator` is honoured.
+- **Removal eats one space.** `class="a z-10 b"` → `class="a b"`; a class that was alone becomes `""` —
+  review those in the dry run.
+- **Nothing is inferred.** A ghost that is not in the map stays a ghost: the run still exits 1 and lists it
+  under *unmapped*. Map entries that match nothing are listed under *unused*.
+- **Only files that contain a mapped ghost are opened**, and only lines with a match are rewritten; line
+  endings (LF / CRLF) are preserved.
+- The fixer edits **text**, not a syntax tree. It is safe for class strings, template literals and
+  `clsx`/`cva` calls, and it will also rewrite a matching token in a comment or a string that is not a
+  class list — the dry run shows every edit with `file:line:col`, so read it before `--write`.
+
+`--json` with `--fix-map` prints `{ "fix": { "write", "edits", "files", "unused", "unmapped" } }`.
+
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | No ghosts (or `--fail-on none`), or an empty scan with `--allow-empty`. |
 | `1` | At least one ghost class found. |
+| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). With several configs: a `--config` glob or `--all-configs` that matches nothing, or **any** config failing (the others are still reported). Full list with messages under *How it fails*. |
+
+| `1` | At least one ghost class found; with `--fix-map`, at least one ghost left unmapped. |
 | `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). Full list with messages under *How it fails*. |
 
 ## Programmatic API
@@ -327,6 +493,24 @@ process.exitCode = report.ghosts.length > 0 ? 1 : 0;
 ```
 
 `analyze()` throws `TwGhostConfigError` for the situations that map to exit code 2.
+
+Several configs at once — what the CLI does for `--all-configs` / repeated `--config`:
+
+```ts
+import { analyzeMany, formatHumanMany, isConfigFailure, resolveConfigPaths } from 'tw-ghost';
+
+const configs = await resolveConfigPaths({ cwd, all: true }); // or { configs: ['apps/*/tailwind.config.ts'] }
+const multi = await analyzeMany(configs, { cwd, ignore: [/^legacy-/] }); // same options as analyze(), minus `config`
+for (const entry of multi.configs) {
+  if (isConfigFailure(entry)) console.error(entry.config, entry.error); // that config threw; the rest ran
+}
+console.log(formatHumanMany(multi, { color: false }));
+process.exitCode = multi.summary.failed > 0 ? 2 : multi.summary.ghost > 0 ? 1 : 0;
+```
+
+`analyzeMany()` never throws for a single bad config — it records `{ config, error }` and moves on
+— but `resolveConfigPaths()` throws `TwGhostConfigError` when a glob matches nothing or discovery
+finds no config. `analyze()` is unchanged.
 `describeEnvironment({ cwd, config, tailwind })` returns what `--env` prints. Lower-level
 pieces are exported too: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`,
 `looksUtilityLike`, `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`,
@@ -502,8 +686,9 @@ unknowns → 20 listed, of which roughly two thirds were genuine typos or dead t
 
 ## Roadmap
 
-- `--format github` (workflow annotations) and SARIF output.
+- SARIF output.
 - Per-file `// tw-ghost-ignore` comments.
+- `--fix-map` scoped to a path (fix one app of a monorepo with a shared map).
 - Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
   include them).
 - Cache candidate extraction between runs for very large monorepos.

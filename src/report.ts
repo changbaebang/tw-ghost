@@ -3,6 +3,7 @@ import pc from 'picocolors';
 type Colors = ReturnType<typeof pc.createColors>;
 
 import type { Finding, GhostFinding, Report } from './analyze.js';
+import { isConfigFailure, type MultiReport } from './multi.js';
 
 export interface FormatOptions {
   color?: boolean | undefined;
@@ -85,4 +86,35 @@ function formatGhost(g: GhostFinding, color: Colors): string[] {
   if (g.suggestions.length > 0)
     lines.push(`    ${color.dim('try:')}   ${g.suggestions.join(', ')}`);
   return lines;
+}
+
+/**
+ * Human-readable multi-config report: one `== <config> (N files, K ghosts)` header per config
+ * followed by that config's report, then an aggregated summary line.
+ */
+export function formatHumanMany(report: MultiReport, options: FormatOptions = {}): string {
+  const color = options.color === false ? pc.createColors(false) : pc;
+  const out: string[] = [];
+  for (const entry of report.configs) {
+    if (isConfigFailure(entry)) {
+      out.push(color.red(color.bold(`== ${entry.config} (failed)`)));
+      out.push(`  ${entry.error}`);
+    } else {
+      const ghosts = plural(entry.ghosts.length, 'ghost');
+      const head = `== ${entry.config} (${plural(entry.filesScanned, 'file')}, ${ghosts})`;
+      out.push(color.bold(entry.ghosts.length > 0 ? color.red(head) : color.green(head)));
+      out.push(formatHuman(entry, options));
+    }
+    out.push('');
+  }
+  const s = report.summary;
+  const parts = [
+    `${plural(s.configs, 'config')}`,
+    s.failed > 0 ? `${s.failed} failed` : undefined,
+    `${plural(s.filesScanned, 'file')}`,
+    `${plural(s.candidateCount, 'candidate')}`,
+    `${s.ghost} ghost`,
+  ].filter((p): p is string => p !== undefined);
+  out.push(color.dim(`total: ${parts.join(', ')} in ${report.durationMs}ms`));
+  return out.join('\n').trimEnd();
 }

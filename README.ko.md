@@ -88,13 +88,74 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 
 # CI: 기계가 읽을 수 있는 출력, 레거시 접두사 제외, 오타·미지 variant 후보도 나열
 npx tw-ghost --json --ignore "^legacy-" --unknown
+
+# 모노레포: 현재 디렉터리 아래의 모든 tailwind.config.* 를 한 번에, JSON 문서 하나로
+npx tw-ghost --all-configs --json
 ```
+
+### CI
+
+GitHub Actions 스텝에서 `--format github` 을 주면 유령 발생 위치마다 PR 인라인 주석이 달린다
+(종료 코드는 다른 형식과 같으므로 스텝은 여전히 실패한다):
+
+```yaml
+- run: npx tw-ghost --format github
+```
+
+각 줄은 workflow command 이며 발생 위치당 하나다. `file=` 은 `GITHUB_WORKSPACE` 기준 상대 경로다
+(파일이 그 밖에 있거나 변수가 없으면 현재 디렉터리 기준):
+
+```
+::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m
+```
+
+`unknown` / `unknownVariant` 는 `--unknown` 을 줄 때만, 제목 `tw-ghost (unknown)` 의 `::warning`
+으로 출력된다. workflow-command 규격대로 모든 메시지에서 `%`·CR·LF 를, `file=` 에서는 추가로
+`,` / `:` 를 이스케이프한다. 한 줄 요약(`tw-ghost: 5 ghost classes, 8 occurrences`)은 주석이 되지
+않도록 stderr 로 나간다.
+
+GitHub 은 체크 UI 에 **스텝당 레벨(error / warning / notice)별 10개, job 당 50개** 의 주석만
+보여준다. 나머지는 로그에는 남지만 인라인으로 표시되지 않는다
+([`actions/toolkit` 에 문서화된 제한](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations)).
+`--max-annotations`(기본 `50`)로 출력 수를 제한하며, 잘린 경우 마지막에
+`::notice::tw-ghost: K more annotations omitted` 를 출력해 잘렸음을 보이게 한다. `--json` 은
+변경 없이 도구 연동용 형식으로 남는다.
 
 Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
 `postcss` ^8 은 *선택적* peer 다: 설정 파일 옆에 `postcss` 가 설치되어 있으면 그것을 쓰고, 없으면
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
 내 환경에 맞는지 확실하지 않다면 `npx tw-ghost --env` 를 실행한다 — 해석한 결과를 출력하거나,
 정확한 이유와 함께 실패한다(종료 코드 2).
+
+### 모노레포
+
+`--config` 가 없으면 tw-ghost 는 현재 디렉터리에서 위로 올라가며 **가장 가까운** `tailwind.config.*`
+하나만 로드한다 — 트리 안의 모든 설정을 스스로 찾아 돌지는 않는다. 여러 앱을 한 번에 검사하려면
+직접 지정하거나 찾게 한다:
+
+```sh
+# 저장소 루트에서 권장: cwd 아래의 모든 tailwind.config.{ts,js,cjs,mjs}
+npx tw-ghost --all-configs
+
+# 또는 명시적으로: --config 는 반복 가능하고 glob 을 받는다
+npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.config.js
+```
+
+- 각 설정은 **독립적으로, 자기 디렉터리 기준으로** 분석된다: `content` glob 은 단일 실행과 똑같이
+  설정 파일 기준으로 해석되고, 그 설정이 속한 `tailwindcss` 설치본이 판정한다. 위치 인자 glob 을
+  주면 cwd 기준으로 해석되어 **모든** 설정에 적용된다.
+- 사람이 읽는 출력은 설정마다 `== apps/web/tailwind.config.ts (N files, K ghosts)` 헤더와 그 설정의
+  리포트를 출력한 뒤 `total:` 한 줄로 끝난다. `--json` 은 *출력 예시* 에 있는 다중 설정 문서로
+  바뀌고, `--env` 는 설정마다 블록을 하나씩 출력한다.
+- **설정 간 중복 제거는 없다.** 여러 설정이 포함하는 공용 파일(`packages/ui/src/Button.tsx`)은
+  각 설정이 따로 스캔하고, 두 설정 모두에서 유령인 클래스는 양쪽에 다 나온다 — 그것이 목적이다.
+  같은 `text-sm` 이 `apps/web` 에서는 살아 있고 `apps/admin` 에서는 죽어 있을 수 있다.
+- 종료 코드는 **어느 하나라도** 유령이 있으면 `1`(`--fail-on` 적용), **어느 하나라도** 로드·스캔에
+  실패하면 `2` — 실패한 설정은 `{ config, error }` 로 보고되고 나머지는 계속 분석되며, stderr 에
+  몇 개가 실패했는지 찍힌다. `--all-configs` 가 아무것도 찾지 못해도 `2` 이며 탐색한 디렉터리를
+  알려 준다. `node_modules`, `dist`, `.next`, `build`, `out`, `coverage` 는 건너뛴다.
+- 앱들이 확장하려고만 두는 베이스 설정(`content` 에 맞는 파일 없음)은 *No files matched* /
+  *Nothing to scan* 으로 실패한다. `--allow-empty` 를 주거나 명시적 `--config` 목록에서 빼면 된다.
 
 ## 요구 사항 & 호환성
 
@@ -197,10 +258,13 @@ darkMode     "class"
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
 | `[globs...]` | 설정의 `content` glob | 스캔할 파일. 위치 인자 glob 은 현재 디렉터리 기준으로 해석되며 설정의 `content` 목록을 대체한다. |
-| `-c, --config <path>` | cwd 에서 위로 탐색 | 로드할 `tailwind.config.{ts,js,cjs,mjs}`. |
+| `-c, --config <path>` | cwd 에서 위로 탐색 | 로드할 `tailwind.config.{ts,js,cjs,mjs}`. 반복 가능하고 glob 을 받는다(`'apps/*/tailwind.config.ts'`, `node_modules` 제외). 아무것도 맞지 않는 glob 은 종료 코드 `2`. 설정이 둘 이상이면 다중 설정 출력(*모노레포* 참고). |
+| `--all-configs` | off | cwd 아래의 모든 `tailwind.config.{ts,js,cjs,mjs}` 를 분석(`node_modules`, `dist`, `.next`, `build`, `out`, `coverage` 제외). 하나도 없으면 종료 코드 `2`. `--config` 와 함께 쓸 수 있다. |
 | `--tailwind <dir>` | 설정 파일 디렉터리 | `tailwindcss`(와 `postcss`)를 설정 파일 디렉터리 대신 이 디렉터리에서 해석. 설정 폴더에서 설치본에 닿지 못하는 레이아웃용. 설정 파일 자체는 여전히 제 위치에서 로드된다. |
 | `--env` | 꺼짐 | 해석한 환경(설정, `tailwindcss` 버전 + 경로, `postcss`, extractor, content glob, 경고)을 출력하고 0 으로 종료 — 또는 사전 점검 오류와 함께 2 로 종료. `--json` 과 조합 가능. |
-| `--json` | 꺼짐 | stdout 에 기계가 읽을 수 있는 리포트 출력. |
+| `--format <human\|json\|github>` | `human` | 출력 형식. `github` 는 유령 **발생 위치마다** `::error` [workflow-command 주석](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) 한 줄을 출력한다(모든 위치, `--max-locations` 무시) 그리고 stderr 에 한 줄 요약. *CI* 참고. |
+| `--json` | 꺼짐 | `--format json` 의 별칭: stdout 에 기계가 읽을 수 있는 리포트 출력. 변경 없음. |
+| `--max-annotations <n>` | `50` | `github` 전용: 이 수만큼 주석을 출력하고 나머지는 `::notice::tw-ghost: K more annotations omitted` 한 줄로 접는다. `0` = 전부. |
 | `--unknown` | 꺼짐 | **유틸리티 모양** unknown 도 나열 — 기본 Tailwind 에서도 프로젝트에서도 CSS 가 안 나오지만 접두사가 Tailwind 유틸리티이고 값이 그 유틸리티가 받을 법한 모양인 클래스(`text-mm`, `px-13`, `rounded-xll`; 오타와 죽은 토큰). 등장 횟수, 그다음 이름순 정렬. 여기에 유틸리티는 동작하지만 variant 체인을 이 설정이 모르는 클래스(`unknownVariant`)도. 루트만 같은 식별자(`my-page`, `no-op`, `bottom-start`)는 보이지 않는다. |
 | `--unknown-all` | 꺼짐 | `--unknown` 과 함께: 유틸리티 모양 부분집합 대신 원시 unknown 토큰 전부를 나열 (extractor 가 본 모든 단어·식별자·URL — 실제 앱에서는 수만 줄). 정렬은 같다. |
 | `--max-locations <n>` | `3` | 클래스당 유지할 위치 수. `0` = 전부. 0 이상의 정수만 허용 (`3abc` 는 종료 코드 2 로 거부). |
@@ -208,6 +272,9 @@ darkMode     "class"
 | `--allow-empty` | 꺼짐 | 일치하는 파일이 없거나 스캔할 설정이 없을 때 빈 리포트로 `0` 종료. 없으면 종료 코드 `2` 이므로 glob 오타가 CI 를 조용히 통과할 수 없다. |
 | `--fail-on <ghost\|none>` | `ghost` | 종료 코드를 `1` 로 만드는 조건. |
 | `--no-suggestions` | 꺼짐 | 대체 클래스 탐색 생략 (테마가 아주 클 때 더 빠름). |
+| `--fix-map-init <file>` | – | 현재 유령 클래스로 **수정 맵 초안**을 쓰고 exit 0: 키는 bare 유틸리티(변형 제거) 하나당 하나, 값은 단일 제안·후보 목록·`null` 중 하나. 이미 있는 파일은 덮어쓰지 않는다. |
+| `--fix-map <file>` | – | 수정 맵 적용(*유령 클래스 고치기* 참고): 매핑된 유령의 모든 출현을 교체 또는 제거하고 변형·`!`·`-` 는 그대로 옮긴다. `--write` 가 없으면 **dry run**. 매핑되지 않은 유령이 남으면 exit 1 (`--fail-on none` 이면 0). |
+| `--write` | 꺼짐 | `--fix-map` 과 함께: 바뀐 파일을 실제로 쓴다. |
 | `--no-color` | 꺼짐 | ANSI 색상 비활성화 (`NO_COLOR` 도 존중). |
 | `-h, --help` / `-v, --version` | | |
 
@@ -290,12 +357,107 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 (`summary.unknown` 개)를 담는다. 둘 다 `count` 내림차순, 그다음 `class` 순으로 정렬된다. summary 의
 두 카운터는 어느 쪽이든 같으므로, 소비자는 `unknown.length` 로 어느 목록을 받았는지 알 수 있다.
 
+**설정이 여러 개일 때** (`--all-configs`, 또는 둘 이상의 파일로 해석되는 `--config`): 문서는
+`{ version, configs, summary, durationMs }` 가 된다. `configs[]` 의 각 항목은 `{ config, …report }`
+— `config` 는 cwd 기준 상대 경로, 나머지는 위의 단일 설정 리포트에서 `version` 만 뺀 것 — 이거나,
+실패한 설정이면 `{ config, error }` 다. `summary` 는 설정별 summary 를 합산하고 `configs`(항목 수),
+`failed`, `filesScanned`, `candidateCount` 를 더한다. 설정이 정확히 **하나**면 어떻게 지정했든
+(`--config a`, 파일 하나에 맞는 glob, 하나만 찾은 `--all-configs`) 출력은 위의 단일 설정 문서와
+바이트 단위로 같다.
+
+```json
+{
+  "version": "0.3.0",
+  "configs": [
+    {
+      "config": "apps/admin/tailwind.config.js",
+      "configPath": "/work/acme/apps/admin/tailwind.config.js",
+      "tailwindVersion": "3.4.17",
+      "extractor": "project",
+      "warnings": [],
+      "filesScanned": 2,
+      "candidateCount": 27,
+      "summary": { "ok": 4, "ghost": 2, "unknown": 21, "unknownVariant": 0, "unknownUtilityLike": 0 },
+      "ghosts": [ … ],
+      "unknown": [],
+      "unknownVariant": [],
+      "durationMs": 86
+    },
+    { "config": "apps/legacy/tailwind.config.js", "error": "Failed to load /work/acme/apps/legacy/tailwind.config.js: …" },
+    { "config": "apps/web/tailwind.config.ts", … }
+  ],
+  "summary": {
+    "configs": 3,
+    "failed": 1,
+    "filesScanned": 4,
+    "candidateCount": 54,
+    "ok": 8,
+    "ghost": 4,
+    "unknown": 42,
+    "unknownVariant": 0,
+    "unknownUtilityLike": 0
+  },
+  "durationMs": 270
+}
+```
+
+## 유령 클래스 고치기
+
+tw-ghost 는 대체 클래스를 스스로 추측하지 않는다. `text-sm` 이 어떤 디자인 시스템에서는 `text-l` 이고 다른
+곳에서는 `text-m` 인데, 그건 문자열 매칭이 아니라 디자인 결정이다. 대신 그 결정을 팀이 한 번 만들고 앱마다
+재사용하는 작은 JSON 파일로 바꾼다.
+
+```sh
+# 1. 현재 유령 클래스로 맵 초안 만들기
+npx tw-ghost --fix-map-init fixes.json
+```
+
+```jsonc
+// fixes.json (초안): 키는 bare 유틸리티 — 변형·"!"·"-" 는 도구가 처리한다
+{
+  "rounded":  ["rounded-0", "rounded-2", "rounded-4", "rounded-8"],   // 후보 여러 개: 하나 고르기
+  "text-sm":  ["text-l", "text-m", "text-s"],
+  "z-10":     "z-content-1",                                          // 제안이 정확히 하나
+  "min-w-px": null                                                    // 후보 없음: null = 제거
+}
+```
+
+모든 배열을 문자열 하나(또는 클래스를 지우려면 `null`)로 줄인 뒤:
+
+```sh
+# 2. 무엇이 바뀔지 보기 (아무것도 쓰지 않음)
+npx tw-ghost --fix-map fixes.json
+
+# 3. 적용
+npx tw-ghost --fix-map fixes.json --write
+```
+
+수정기가 지키는 규칙:
+
+- **토큰 단위로만.** `text-sm` 은 `md:text-sm`(이건 자기 bare 유틸리티로 따로 처리), `legacy-text-sm`,
+  `text-sm/50` 안에서 건드리지 않고, `p-3` 은 `p-30`, `p-3.5`, `!p-3` 안에서 건드리지 않는다.
+- **변형·`!`·`-` 는 그대로 옮긴다.** `{ "mt-3": "mt-4" }` 는 `lg:!-mt-3` 을 `lg:!-mt-4` 로 만든다. 커스텀
+  `separator` 도 존중한다.
+- **제거는 공백 하나를 같이 먹는다.** `class="a z-10 b"` → `class="a b"`; 혼자 있던 클래스는 `""` 가 된다 —
+  dry run 에서 그런 곳을 확인할 것.
+- **아무것도 추론하지 않는다.** 맵에 없는 유령은 유령으로 남는다: 실행은 여전히 exit 1 이고 *unmapped* 에
+  나열된다. 아무것도 매칭하지 않는 맵 항목은 *unused* 에 나열된다.
+- **매핑된 유령이 있는 파일만 연다**, 그리고 매칭이 있는 줄만 다시 쓴다. 줄 끝(LF / CRLF)은 유지된다.
+- 수정기는 문법 트리가 아니라 **텍스트**를 고친다. 클래스 문자열·템플릿 리터럴·`clsx`/`cva` 호출에는 안전하지만,
+  주석이나 클래스 목록이 아닌 문자열 안의 같은 토큰도 바꾼다. dry run 이 모든 편집을 `file:line:col` 로 보여
+  주니 `--write` 전에 읽을 것.
+
+`--json` 과 `--fix-map` 을 함께 쓰면 `{ "fix": { "write", "edits", "files", "unused", "unmapped" } }` 를 출력한다.
+
 ## 종료 코드
 
 | 코드 | 의미 |
 | --- | --- |
 | `0` | 유령 클래스 없음 (또는 `--fail-on none`), 또는 `--allow-empty` 를 준 빈 스캔. |
 | `1` | 유령 클래스가 하나 이상 발견됨. |
+| `2` | 사용법 또는 설정 오류: 잘못된 플래그·값(예: 정수가 아닌 `--max-locations`), 설정 파일 없음, 설정 로드 실패 또는 함수 export, `tailwindcss` 를 찾을 수 없음, 지원하지 않는 Tailwind 버전(4.x, ≤ 2.x, 3.0–3.2), **glob 에 일치하는 파일 없음 / 스캔할 것 없음** (`--allow-empty` 가 없을 때). 설정이 여러 개일 때: 아무것도 맞지 않는 `--config` glob 이나 `--all-configs`, 또는 **어느 하나라도** 실패한 설정(나머지는 계속 보고된다). 메시지를 포함한 전체 목록은 *실패하는 방식* 참고. |
+
+| `1` | 유령 클래스가 하나 이상 발견됨; `--fix-map` 에서는 매핑되지 않은 유령이 하나 이상 남음. |
 | `2` | 사용법 또는 설정 오류: 잘못된 플래그·값(예: 정수가 아닌 `--max-locations`), 설정 파일 없음, 설정 로드 실패 또는 함수 export, `tailwindcss` 를 찾을 수 없음, 지원하지 않는 Tailwind 버전(4.x, ≤ 2.x, 3.0–3.2), **glob 에 일치하는 파일 없음 / 스캔할 것 없음** (`--allow-empty` 가 없을 때). 메시지를 포함한 전체 목록은 *실패하는 방식* 참고. |
 
 ## 프로그래밍 API
@@ -322,6 +484,24 @@ process.exitCode = report.ghosts.length > 0 ? 1 : 0;
 ```
 
 `analyze()` 는 종료 코드 2 에 해당하는 상황에서 `TwGhostConfigError` 를 던진다.
+
+설정 여러 개를 한 번에 — CLI 가 `--all-configs` / 반복된 `--config` 에서 하는 일:
+
+```ts
+import { analyzeMany, formatHumanMany, isConfigFailure, resolveConfigPaths } from 'tw-ghost';
+
+const configs = await resolveConfigPaths({ cwd, all: true }); // 또는 { configs: ['apps/*/tailwind.config.ts'] }
+const multi = await analyzeMany(configs, { cwd, ignore: [/^legacy-/] }); // analyze() 와 같은 옵션, `config` 만 제외
+for (const entry of multi.configs) {
+  if (isConfigFailure(entry)) console.error(entry.config, entry.error); // 이 설정은 실패, 나머지는 실행됨
+}
+console.log(formatHumanMany(multi, { color: false }));
+process.exitCode = multi.summary.failed > 0 ? 2 : multi.summary.ghost > 0 ? 1 : 0;
+```
+
+`analyzeMany()` 는 설정 하나가 잘못됐다고 던지지 않고 `{ config, error }` 로 기록한 뒤 넘어간다.
+반면 `resolveConfigPaths()` 는 glob 이 아무것도 맞지 않거나 탐색 결과가 없으면 `TwGhostConfigError`
+를 던진다. `analyze()` 는 그대로다.
 `describeEnvironment({ cwd, config, tailwind })` 는 `--env` 가 출력하는 내용을 반환한다. 하위 구성 요소도
 export 된다: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`, `looksUtilityLike`,
 `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`, `changedThemeKeys`.
@@ -477,8 +657,9 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
 
 ## 로드맵
 
-- `--format github` (워크플로 어노테이션) 및 SARIF 출력.
+- SARIF 출력.
 - 파일 단위 `// tw-ghost-ignore` 주석.
+- 경로 범위를 지정한 `--fix-map` (공유 맵으로 모노레포의 앱 하나만 고치기).
 - CSS 파일 내 `@apply` 의 제대로 된 처리 (지금은 glob 에 포함되면 일반 텍스트로 스캔된다).
 - 아주 큰 모노레포를 위한 실행 간 후보 추출 캐시.
 - 비교 가능한 "생성 후 비교" 경로가 생기면 Tailwind v4 지원.
