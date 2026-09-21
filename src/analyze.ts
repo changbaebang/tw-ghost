@@ -1,14 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
-import {
-  classify,
-  collectRoots,
-  DEFAULT_SEPARATOR,
-  isPlausibleVariantChain,
-  looksUtilityLike,
-  splitVariants,
-} from './classify.js';
+import { classify, DEFAULT_SEPARATOR, isPlausibleVariantChain, splitVariants } from './classify.js';
 import { TwGhostConfigError } from './errors.js';
 import {
   type CandidateOccurrences,
@@ -19,6 +12,7 @@ import {
 import { generate, stockConfigFrom } from './generate.js';
 import { contentGlobs, findConfig, loadProject } from './project.js';
 import { suggestReplacements } from './suggest.js';
+import { buildUtilityVocabulary, looksUtilityLike } from './vocabulary.js';
 
 export interface AnalyzeOptions {
   /** Path to tailwind.config.*; auto-detected by walking up from `cwd` when omitted. */
@@ -34,8 +28,13 @@ export interface AnalyzeOptions {
   allowEmpty?: boolean | undefined;
   /** Class names matching any of these patterns are skipped entirely. */
   ignore?: Array<string | RegExp> | undefined;
-  /** Populate `unknown` / `unknownVariant` in the report (typo detection). Default: false. */
+  /**
+   * Populate `unknown` / `unknownVariant` in the report (typo detection). `unknown` holds the
+   * utility-like subset only, sorted by occurrence count then name. Default: false.
+   */
   unknown?: boolean | undefined;
+  /** With `unknown`: put every raw unknown candidate in `unknown` instead of the utility-like subset. Default: false. */
+  unknownAll?: boolean | undefined;
   /** Locations kept per finding (0 = unlimited). Default: 3. */
   maxLocations?: number | undefined;
   /** Compute replacement suggestions for ghosts. Default: true. */
@@ -88,7 +87,10 @@ export interface Report {
   candidateCount: number;
   summary: Summary;
   ghosts: GhostFinding[];
-  /** Only populated when `unknown: true`; filtered to utility-looking names. */
+  /**
+   * Only populated when `unknown: true`: the utility-like unknowns (`summary.unknownUtilityLike`
+   * of them), or every raw unknown with `unknownAll: true`. Sorted by count desc, then name.
+   */
   unknown: Finding[];
   /** Only populated when `unknown: true`: valid utility, unrecognised variant chain. */
   unknownVariant: Finding[];
@@ -257,11 +259,17 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
     for (const ghost of ghosts) ghost.suggestions = suggestions.get(ghost.class) ?? [];
   }
 
-  const roots = collectRoots([...projectCss.classes, ...stockCss.classes], separator);
+  const vocabulary = buildUtilityVocabulary({
+    themes: [project.resolved.theme, project.stockResolved.theme],
+    classes: [...projectCss.classes, ...stockCss.classes],
+    separator,
+    prefix: project.resolved.prefix,
+  });
   const unknownUtilityLike = unknownAll
-    .filter((f) => looksUtilityLike(f.class, roots, separator))
+    .filter((f) => looksUtilityLike(f.class, vocabulary, separator))
     .sort(byCountThenName);
   summary.unknownUtilityLike = unknownUtilityLike.length;
+  unknownAll.sort(byCountThenName);
 
   return {
     configPath,
@@ -273,7 +281,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
     candidateCount: candidates.length,
     summary,
     ghosts,
-    unknown: options.unknown ? unknownUtilityLike : [],
+    unknown: options.unknown ? (options.unknownAll ? unknownAll : unknownUtilityLike) : [],
     unknownVariant: options.unknown ? unknownVariantAll.sort(byCountThenName) : [],
     durationMs: Math.round(performance.now() - started),
   };

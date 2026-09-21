@@ -3,7 +3,6 @@ import {
   classify,
   collectRoots,
   isPlausibleVariantChain,
-  looksUtilityLike,
   splitVariants,
   utilityPart,
   utilityRoot,
@@ -11,6 +10,12 @@ import {
 import { stockConfigFrom } from '../src/generate.js';
 import { assertSupportedTailwind, assertTailwindV3, unwrapDefaultExport } from '../src/project.js';
 import { changedThemeKeys, flattenThemeKeys } from '../src/suggest.js';
+import {
+  buildUtilityVocabulary,
+  looksUtilityLike,
+  matchUtilityPrefix,
+  withinOneEdit,
+} from '../src/vocabulary.js';
 
 describe('classify', () => {
   const project = new Set(['text-m', 'p-4', 'md:p-4', 'md:text-m']);
@@ -143,34 +148,118 @@ describe('utilityPart / utilityRoot', () => {
 });
 
 describe('looksUtilityLike', () => {
-  const roots = collectRoots(['text-sm', 'p-4', 'md:hover:px-2', 'acme-btn-primary']);
+  // A project that replaced spacing / fontSize / borderRadius, like the fixtures do.
+  const theme = {
+    spacing: { 0: '0px', 2: '2px', 4: '4px', 8: '8px', 16: '16px' },
+    padding: { 0: '0px', 2: '2px', 4: '4px', 8: '8px', 16: '16px' },
+    margin: { 0: '0px', 2: '2px', 4: '4px', 8: '8px', 16: '16px', auto: 'auto' },
+    gap: { 0: '0px', 2: '2px', 4: '4px', 8: '8px', 16: '16px' },
+    fontSize: { xs: '10px', s: '12px', m: '13px', l: '14px' },
+    borderRadius: { 4: '4px', 8: '8px', xl: '12px', full: '9999px' },
+    textColor: { acme: { DEFAULT: '#123456', light: '#abcdef' }, red: { 500: '#f00' } },
+    inset: { 0: '0px', auto: 'auto', '1/2': '50%' },
+    opacity: { 50: '0.5' },
+    lineHeight: { 6: '1.5rem' },
+  };
+  // `analyze` passes the project theme and the stock theme; `sm` only exists in the latter.
+  const stockTheme = { fontSize: { sm: '0.875rem', base: '1rem' } };
+  const vocab = buildUtilityVocabulary({
+    themes: [theme, stockTheme],
+    classes: ['text-m', 'p-4', 'md:hover:px-2', 'acme-btn-primary', 'flex', 'grid', 'block'],
+  });
 
-  it('accepts utility-shaped names whose root is a core or observed utility root', () => {
-    expect(looksUtilityLike('text-smm', roots)).toBe(true);
-    expect(looksUtilityLike('md:hover:text-smm', roots)).toBe(true);
-    expect(looksUtilityLike('!-mt-3', roots)).toBe(true);
-    expect(looksUtilityLike('acme-btn-secondary', roots)).toBe(true);
+  it('accepts typos and dead tokens next to a real value of the same utility', () => {
+    expect(looksUtilityLike('text-mm', vocab)).toBe(true);
+    expect(looksUtilityLike('text-smm', vocab)).toBe(true);
+    expect(looksUtilityLike('md:hover:text-smm', vocab)).toBe(true);
+    expect(looksUtilityLike('px-13', vocab)).toBe(true);
+    expect(looksUtilityLike('gap-2.5', vocab)).toBe(true);
+    expect(looksUtilityLike('rounded-xll', vocab)).toBe(true);
+    expect(looksUtilityLike('!-mt-3', vocab)).toBe(true);
+    expect(looksUtilityLike('max-h-4', vocab)).toBe(true);
+    expect(looksUtilityLike('w-1/3', vocab)).toBe(true);
+    expect(looksUtilityLike('w-[13px]', vocab)).toBe(true);
+    expect(looksUtilityLike('text-red', vocab)).toBe(true); // head of `red-500`
+    expect(looksUtilityLike('text-acme-lite', vocab)).toBe(true); // one edit from `acme-light`
+    expect(looksUtilityLike('text-m/6', vocab)).toBe(true); // dead utility with a modifier
+    expect(looksUtilityLike('text-red-500/50', vocab)).toBe(true);
+    expect(looksUtilityLike('acme-btn-secondary', vocab)).toBe(true); // observed plugin root
+  });
+  it('rejects identifiers whose root is a utility but whose value is not a Tailwind value', () => {
+    for (const id of ['my-page', 'no-op', 'bottom-start', 'box-center', 'items-between']) {
+      expect(looksUtilityLike(id, vocab), id).toBe(false);
+    }
+    expect(looksUtilityLike('acme-widget', vocab)).toBe(false);
+    expect(looksUtilityLike('text-red-500/on-color', vocab)).toBe(false);
   });
   it('rejects plain words, custom CSS classes and HTML attribute vocabulary', () => {
-    expect(looksUtilityLike('flex', roots)).toBe(false);
-    expect(looksUtilityLike('swiper-slide', roots)).toBe(false);
-    expect(looksUtilityLike('data-testid', roots)).toBe(false);
-    expect(looksUtilityLike('aria-hidden', roots)).toBe(false);
-    expect(looksUtilityLike('https://example.com', roots)).toBe(false);
-    expect(looksUtilityLike('Text-sm', roots)).toBe(false);
-    expect(looksUtilityLike('class="md:text-smm', roots)).toBe(false);
+    expect(looksUtilityLike('flex', vocab)).toBe(false);
+    expect(looksUtilityLike('swiper-slide', vocab)).toBe(false);
+    expect(looksUtilityLike('data-state', vocab)).toBe(false);
+    expect(looksUtilityLike('data-testid', vocab)).toBe(false);
+    expect(looksUtilityLike('aria-hidden', vocab)).toBe(false);
+    expect(looksUtilityLike('https://example.com', vocab)).toBe(false);
+    expect(looksUtilityLike('Text-sm', vocab)).toBe(false);
+    expect(looksUtilityLike('class="md:text-smm', vocab)).toBe(false);
+  });
+  it('rejects extractor tails, prose joins and bare prefixes', () => {
+    expect(looksUtilityLike('px-16)', vocab)).toBe(false);
+    expect(looksUtilityLike('gap-4.', vocab)).toBe(false);
+    expect(looksUtilityLike('text-m,', vocab)).toBe(false);
+    expect(looksUtilityLike('bg-0.png', vocab)).toBe(false);
+    expect(looksUtilityLike('block-A', vocab)).toBe(false);
+    expect(looksUtilityLike('grid-2', vocab)).toBe(false); // `grid` is static, not a value root
+    expect(looksUtilityLike('max-h', vocab)).toBe(false);
+    expect(looksUtilityLike('space-y', vocab)).toBe(false);
+    expect(looksUtilityLike('after:content-[', vocab)).toBe(false);
+    expect(looksUtilityLike('bg-[$' + '{fill}]', vocab)).toBe(false); // template hole
+  });
+  it('lets a static utility through under a variant chain', () => {
+    expect(looksUtilityLike('md:flex', vocab)).toBe(true);
+    expect(looksUtilityLike('md:rounded', vocab)).toBe(true);
+    expect(looksUtilityLike('float:left', vocab)).toBe(false); // inline CSS, not a class
   });
   it('rejects template-literal stubs that end in a dash or separator', () => {
-    expect(looksUtilityLike('max-h-', roots)).toBe(false);
-    expect(looksUtilityLike('before:content-', roots)).toBe(false);
-    expect(looksUtilityLike('md:', roots)).toBe(false);
-    expect(looksUtilityLike('max-h-4', roots)).toBe(true);
+    expect(looksUtilityLike('max-h-', vocab)).toBe(false);
+    expect(looksUtilityLike('before:content-', vocab)).toBe(false);
+    expect(looksUtilityLike('md:', vocab)).toBe(false);
   });
-  it('uses the configured separator for the variant / utility split', () => {
-    const underscoreRoots = collectRoots(['tw-text-sm', 'md_hover_tw-px-2'], '_');
-    expect(underscoreRoots.has('tw')).toBe(true);
-    expect(looksUtilityLike('md_tw-text-smm', underscoreRoots, '_')).toBe(true);
-    expect(looksUtilityLike('md_', underscoreRoots, '_')).toBe(false);
+  it('strips the project prefix and uses the configured separator', () => {
+    const prefixed = buildUtilityVocabulary({
+      themes: [theme, stockTheme],
+      classes: ['tw-text-m', 'md_hover_tw-px-2'],
+      separator: '_',
+      prefix: 'tw-',
+    });
+    expect(looksUtilityLike('md_tw-text-smm', prefixed, '_')).toBe(true);
+    expect(looksUtilityLike('tw-my-page', prefixed, '_')).toBe(false);
+    expect(looksUtilityLike('md_', prefixed, '_')).toBe(false);
+  });
+});
+
+describe('collectRoots', () => {
+  it('collects utility roots across variants, `!`, `-` and the separator', () => {
+    expect(collectRoots(['text-sm', 'md:hover:!-px-2', 'acme-btn'])).toEqual(
+      new Set(['text', 'px', 'acme']),
+    );
+    expect(collectRoots(['md_tw-text-sm'], '_')).toEqual(new Set(['tw']));
+  });
+});
+
+describe('matchUtilityPrefix / withinOneEdit', () => {
+  it('picks the longest core prefix', () => {
+    expect(matchUtilityPrefix('min-h-0')).toBe('min-h');
+    expect(matchUtilityPrefix('m-4')).toBe('m');
+    expect(matchUtilityPrefix('rounded-tl-4')).toBe('rounded-tl');
+    expect(matchUtilityPrefix('swiper-slide')).toBeUndefined();
+  });
+  it('is Levenshtein distance ≤ 1', () => {
+    expect(withinOneEdit('xl', 'xll')).toBe(true);
+    expect(withinOneEdit('mm', 'm')).toBe(true);
+    expect(withinOneEdit('sm', 'smm')).toBe(true);
+    expect(withinOneEdit('sm', 'ms')).toBe(false);
+    expect(withinOneEdit('page', 'px')).toBe(false);
+    expect(withinOneEdit('', 'a')).toBe(true);
   });
 });
 

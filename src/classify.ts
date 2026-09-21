@@ -35,18 +35,6 @@ export function classify(
   return 'unknown';
 }
 
-/** Prefixes that look utility-like by shape but are HTML/JS vocabulary, never Tailwind. */
-const NON_UTILITY_PREFIXES = [
-  'data-',
-  'aria-',
-  'http:',
-  'https:',
-  'file:',
-  'mailto:',
-  'tel:',
-  'x-',
-];
-
 /** Roots of the Tailwind v3 core utilities (the part before the first `-`). */
 export const CORE_UTILITY_ROOTS = new Set<string>(
   (
@@ -63,32 +51,6 @@ export const CORE_UTILITY_ROOTS = new Set<string>(
 );
 
 const NUMBER_LIKE = /^-?\d+(\.\d+)?$/;
-
-/** A bare utility must contain a dash (`text-smm`, `w-[13px]`); a lone word (`flex`) is not utility-like. */
-const BARE_UTILITY_SHAPE = /^!?-?[a-z][a-z0-9-]*-[^\s]+$/;
-/** Under a variant chain the root check does the work, so `md:flex` is allowed through. */
-const VARIANT_UTILITY_SHAPE = /^!?-?[a-z][^\s]*$/;
-
-/**
- * Heuristic used for `--unknown`: keep only candidates that look like a Tailwind utility
- * whose root is a real utility root (core, or one observed in the generated CSS).
- */
-export function looksUtilityLike(
-  candidate: string,
-  observedRoots: ReadonlySet<string>,
-  separator: string = DEFAULT_SEPARATOR,
-): boolean {
-  if (NON_UTILITY_PREFIXES.some((p) => candidate.startsWith(p))) return false;
-  // `max-h-` / `before:content-` are template-literal stubs (`max-h-${x}`), never a real class.
-  if (candidate.endsWith('-') || candidate.endsWith(separator)) return false;
-  const { variants, utility } = splitVariants(candidate, separator);
-  if (variants !== '' && !isPlausibleVariantChain(variants, separator)) return false;
-  const shape = variants === '' ? BARE_UTILITY_SHAPE : VARIANT_UTILITY_SHAPE;
-  if (!shape.test(utility)) return false;
-  const root = utilityRoot(stripModifiers(utility));
-  if (root === '' || NUMBER_LIKE.test(root)) return false;
-  return CORE_UTILITY_ROOTS.has(root) || observedRoots.has(root);
-}
 
 /**
  * Split `md:hover:!-m-4` into its variant chain (`md:hover:`, trailing separator kept, `''`

@@ -12,7 +12,6 @@ export {
   collectRoots,
   DEFAULT_SEPARATOR,
   isPlausibleVariantChain,
-  looksUtilityLike,
   splitVariants,
   stripModifiers,
   utilityPart,
@@ -72,3 +71,11 @@ export {
 export { type FormatOptions, formatHuman, formatHumanMany } from './report.js';
 export { changedThemeKeys, flattenThemeKeys } from './suggest.js';
 export { unescapeCssIdentifier } from './unescape.js';
+export {
+  buildUtilityVocabulary,
+  looksUtilityLike,
+  matchUtilityPrefix,
+  type UtilityVocabulary,
+  type VocabularyOptions,
+  withinOneEdit,
+} from './vocabulary.js';

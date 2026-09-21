@@ -47,6 +47,41 @@ All notable changes to this project are documented here. The format follows
   Exit 1 while any ghost remains unmapped. JSON: `{ "fix": { write, edits, files, unused, unmapped } }`.
 - Report: `separator` (top level) and `files` per ghost (all files the class occurs in, never clipped).
 - Programmatic: `applyFixMap`, `applyFixMapToText`, `draftFixMap`, `parseFixMap`, `replacementFor`, `formatFix`.
+- `--unknown-all`: with `--unknown`, put every raw unknown token in the list (and in the `unknown`
+  JSON array) instead of the utility-like subset. Programmatic: `analyze({ unknownAll: true })`,
+  `formatHuman(report, { unknownAll: true })`.
+- Human `--unknown` output has a header with both counts:
+  `? Unknown utility-like classes (N shown, M raw; use --unknown-all for everything):`
+  (`? Unknown classes, everything (M shown, N utility-like; …)` with `--unknown-all`).
+- Programmatic API: `buildUtilityVocabulary`, `matchUtilityPrefix`, `withinOneEdit`,
+  `UtilityVocabulary`, `VocabularyOptions`.
+- Fixture `unknown-noise` and tests for the identifiers that must be excluded (`my-page`,
+  `no-op`, `bottom-start`, `box-center`, `data-state`), the typos that must be listed (`text-mm`,
+  `px-13`, `rounded-xll`, `gap-2.25`), `--unknown-all`, sort order and the JSON shapes.
+
+### Changed
+
+- **Breaking for `--unknown --json` consumers:** the utility-like heuristic behind the `unknown`
+  array is much stricter, so the list is shorter and different. It used to accept any token
+  whose *root* was a utility root, which let identifiers such as `my-page`, `no-op`,
+  `bottom-start`, `box-center` and every `px-16)`-style punctuation tail through (on a large
+  real-world app: ≈93,000 raw unknowns, 315 listed, most of them noise). It now also requires
+  the *value* to look like one that utility can take — numeric / fraction / arbitrary, a theme
+  key of the sections that utility reads (project and stock), a keyword of that utility, a
+  generic keyword (`auto`, `full`, `none`, `px`, `screen`, …), one edit away from any of those,
+  or the head of a nested key — with the value-taking prefix matched longest-first (`min-h`, not
+  `min`) and the project `prefix` stripped. Same app: 20 listed. `summary.unknown` (raw) and
+  `summary.unknownUtilityLike` keep their meaning; `unknown` holds the utility-like subset unless
+  `--unknown-all` is given. Anything that needs the old, permissive list should pass
+  `--unknown-all` and filter itself.
+- The raw `unknown` list (`--unknown-all`) is sorted by occurrence count descending, then by
+  name, like the utility-like list and `unknownVariant` already were.
+- Programmatic API: `looksUtilityLike(candidate, vocabulary, separator)` now takes a
+  `UtilityVocabulary` (from `buildUtilityVocabulary`) instead of a `Set` of roots and lives in
+  `src/vocabulary.ts`; `collectRoots` and `CORE_UTILITY_ROOTS` are still exported but no longer
+  drive the heuristic.
+- README: `--unknown` / `--unknown-all` option rows, the JSON note, the heuristic description and
+  a new *Known sources of noise in `--unknown`* section, in English and Korean.
 
 ## [0.2.0] - 2026-09-17
 

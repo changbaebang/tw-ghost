@@ -74,7 +74,8 @@ export default {
   이미 프로덕션에서 깨져 있는 것이지, 이 리포트에서만 빠지는 것이 아니다.
 - Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다.
   발견한 버전을 명시한 메시지와 함께 종료 코드 2 로 끝난다 (*요구 사항 & 호환성* 참고).
-- "unknown" 클래스(커스텀 CSS, 일반 단어, 오타)는 기본적으로 보고하지 않는다 — `--unknown` 참고.
+- "unknown" 클래스(커스텀 CSS, 일반 단어, 오타)는 기본적으로 보고하지 않는다 — 유틸리티 모양인
+  것(오타, 죽은 토큰)은 `--unknown`, 원시 목록 전체는 `--unknown-all` 참고.
 
 ## 설치 & 사용
 
@@ -264,7 +265,8 @@ darkMode     "class"
 | `--format <human\|json\|github>` | `human` | 출력 형식. `github` 는 유령 **발생 위치마다** `::error` [workflow-command 주석](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) 한 줄을 출력한다(모든 위치, `--max-locations` 무시) 그리고 stderr 에 한 줄 요약. *CI* 참고. |
 | `--json` | 꺼짐 | `--format json` 의 별칭: stdout 에 기계가 읽을 수 있는 리포트 출력. 변경 없음. |
 | `--max-annotations <n>` | `50` | `github` 전용: 이 수만큼 주석을 출력하고 나머지는 `::notice::tw-ghost: K more annotations omitted` 한 줄로 접는다. `0` = 전부. |
-| `--unknown` | 꺼짐 | 기본 Tailwind 에서도 프로젝트에서도 CSS 가 안 나오는 유틸리티 모양 클래스(오타 탐지)와, 유틸리티는 동작하지만 variant 체인을 이 설정이 모르는 클래스(`unknownVariant`)도 나열. |
+| `--unknown` | 꺼짐 | **유틸리티 모양** unknown 도 나열 — 기본 Tailwind 에서도 프로젝트에서도 CSS 가 안 나오지만 접두사가 Tailwind 유틸리티이고 값이 그 유틸리티가 받을 법한 모양인 클래스(`text-mm`, `px-13`, `rounded-xll`; 오타와 죽은 토큰). 등장 횟수, 그다음 이름순 정렬. 여기에 유틸리티는 동작하지만 variant 체인을 이 설정이 모르는 클래스(`unknownVariant`)도. 루트만 같은 식별자(`my-page`, `no-op`, `bottom-start`)는 보이지 않는다. |
+| `--unknown-all` | 꺼짐 | `--unknown` 과 함께: 유틸리티 모양 부분집합 대신 원시 unknown 토큰 전부를 나열 (extractor 가 본 모든 단어·식별자·URL — 실제 앱에서는 수만 줄). 정렬은 같다. |
 | `--max-locations <n>` | `3` | 클래스당 유지할 위치 수. `0` = 전부. 0 이상의 정수만 허용 (`3abc` 는 종료 코드 2 로 거부). |
 | `--ignore <regex>` | – | 이름이 일치하는 클래스를 건너뜀. 반복 지정 가능. |
 | `--allow-empty` | 꺼짐 | 일치하는 파일이 없거나 스캔할 설정이 없을 때 빈 리포트로 `0` 종료. 없으면 종료 코드 `2` 이므로 glob 오타가 CI 를 조용히 통과할 수 없다. |
@@ -350,8 +352,10 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 - `summary.unknownVariant` — 기본 유틸리티는 내 설정에서 동작하지만 variant 체인이 동작하지 않는
   후보(`p-4` 는 멀쩡한데 `bogus:p-4`). 보통 variant 오타다.
 
-`unknown` 과 `unknownVariant` 배열은 `--unknown` 을 줄 때만 채워지며, `unknown` 은 유틸리티 모양
-이름만 남긴다.
+`unknown` 과 `unknownVariant` 배열은 `--unknown` 을 줄 때만 채워진다. `unknown` 은 유틸리티 모양
+부분집합(`summary.unknownUtilityLike` 개)을 담고, `--unknown-all` 을 함께 주면 원시 unknown 전부
+(`summary.unknown` 개)를 담는다. 둘 다 `count` 내림차순, 그다음 `class` 순으로 정렬된다. summary 의
+두 카운터는 어느 쪽이든 같으므로, 소비자는 `unknown.length` 로 어느 목록을 받았는지 알 수 있다.
 
 **설정이 여러 개일 때** (`--all-configs`, 또는 둘 이상의 파일로 해석되는 `--config`): 문서는
 `{ version, configs, summary, durationMs }` 가 된다. `configs[]` 의 각 항목은 `{ config, …report }`
@@ -467,6 +471,7 @@ const report = await analyze({
   globs: ['src/**/*.tsx'],      // 선택, 기본은 설정의 content glob
   ignore: [/^legacy-/],
   unknown: false,
+  unknownAll: false,            // unknown 과 함께: 유틸리티 모양 부분집합 대신 원시 목록
   allowEmpty: false,            // true → TwGhostConfigError 대신 빈 리포트
   maxLocations: 3,
   suggestions: true,
@@ -619,12 +624,36 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
   않고 대체 판정할 variant 체인도 없으므로 ghost 가 아니라 `unknown` 이다. `--unknown` 으로 볼 수 있다.
 - **extractor 잡음은 기본 유틸리티로 판정하지 않는다.** `class="tablet:text-sm`(따옴표 포함) 같은
   토큰은 `unknown` 으로 남는다. 그 옆의 진짜 `tablet:text-sm` 은 여전히 보고된다.
-- **unknown 목록 휴리스틱.** `--unknown` 은 그럴듯한 variant 체인을 떼어 낸 뒤 유틸리티가
-  `/^!?-?[a-z][a-z0-9-]*-[^\s]+$/` (variant 체인 아래에서는 `/^!?-?[a-z][^\s]*$/`) 에 맞고,
-  `data-`/`aria-`/URL 스킴으로 시작하지 않고, `-` 나 separator 로 끝나지 않으며(`max-h-${x}` 같은
-  템플릿 리터럴 조각), 루트(`text-smm` 의 `text`)가 Tailwind 코어 유틸리티 루트이거나 생성된 CSS 에서
-  관측된 루트일 때만 후보를 남긴다. 어디에서도 올바르게 쓰인 적 없는 커스텀 플러그인 유틸리티는
-  일반 단어와 함께 걸러진다. 모호한 경우는 오탐을 줄이는 쪽으로 정했다.
+- **unknown 목록 휴리스틱.** `--unknown` 은 그럴듯한 variant 체인과 프로젝트 `prefix` 를 떼어 낸
+  뒤, 클래스 모양이고(소문자·숫자·`-` `.` `/` `%`, `${` 구멍 없는 균형 잡힌 `[...]`; `px-16)`
+  이나 `text-black,` 같은 구두점 꼬리 없음), `data-`/`aria-`/URL 스킴으로 시작하지 않고, `-` 나
+  separator 로 끝나지 않으며(`max-h-${x}` 같은 템플릿 리터럴 조각), **접두사**가 값을 받는 코어
+  유틸리티(`text`, `min-h`, `rounded-tl`, … — 가장 긴 것 우선)이거나 생성된 CSS 가 존재를 증명한
+  루트(커스텀 플러그인)이고, **값**이 그 유틸리티가 받을 법한 모양일 때만 후보를 남긴다: 숫자 /
+  분수 / `[임의값]`, 범용 키워드(`auto`, `full`, `none`, `px`, `screen`, …), 그 유틸리티가 읽는
+  테마 섹션의 키(project *와* stock — `text` 는 `fontSize` + `textColor`), 그 유틸리티의 키워드
+  (`flex-col`, `justify-between`), 생성된 CSS 에서 관측된 값, 이들 중 하나와 편집 거리 1
+  (`xll` → `xl`, `mm` → `m`), 또는 중첩 키의 머리(`red-500` 이 있을 때 `red`). `/modifier` 는
+  숫자, 임의값, `opacity` / `lineHeight` 키여야 한다. 그 외는 일반 단어와 함께 걸러진다 — 값이
+  실제 값과 전혀 가깝지 않은 죽은 토큰(`danger*` 색이 없을 때의 `text-danger`, `items-between`,
+  올바르게 쓰인 적 없는 플러그인의 `pb-safe`), 접두사만 있는 것(`max-h`, `space-y`), 접두사 자체의
+  오타(`tetx-sm`)도 포함해서. 모호한 경우는 오탐을 줄이는 쪽으로 정했고, `--unknown-all` 이 탈출구다.
+
+### `--unknown` 에 남는 잡음
+
+큰 실제 앱에서 측정했을 때 유틸리티 모양 필터를 여전히 통과하는 것들 (원시 unknown ≈93,000 →
+20 개 나열, 그중 대략 2/3 가 진짜 오타·죽은 토큰):
+
+- **클래스가 아닌 숫자 값.** `bg-0.png` 에셋 옆의 `bg-0`, 산문이나 테스트 데이터의 `content-1`,
+  `to-1`, `z-1`: Tailwind 접두사 뒤의 숫자는 항상 받아들인다. 죽은 스케일 키(`mt-15`, `gap-125`)가
+  정확히 그 모양이기 때문이다.
+- **죽은 디자인 토큰 이름.** 토큰이 개명·삭제된 뒤의 `hover:bg-surface-secondary`,
+  `fill-on-color-pressed`: 제대로 나열되지만 고칠 곳은 보통 클래스가 아니라 테마다.
+- **엉뚱한 유틸리티에 붙은 범용 키워드.** `peer-focus:ring-full`, `content-auto`: `full` / `auto`
+  는 모든 접두사에서 받아들인다.
+- **인라인 CSS 와 산문**은 `unknownVariant` 에만 닿고(`display:flex`, *오탐* 참고) 유틸리티 모양
+  목록에는 오지 않는다 — 다만 주석 속 문장에 붙은 클래스(`px-16),`)는 보고되는 대신 모양 검사에서
+  떨어지므로, 그런 것은 원시 목록(`--unknown-all`)에서 찾아야 한다.
 
 ## 로드맵
 

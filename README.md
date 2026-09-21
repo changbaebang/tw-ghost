@@ -74,7 +74,8 @@ inherits, and nobody notices until a designer asks why the padding is off.
   either — they are broken in production already, not just in this report.
 - Support Tailwind v4 (CSS-first config, no `tailwind.config.js`) or Tailwind older than 3.3. It exits
   with code 2 and a message naming the version it found (see *Requirements & compatibility*).
-- Report "unknown" classes (custom CSS, plain words, typos) by default — see `--unknown`.
+- Report "unknown" classes (custom CSS, plain words, typos) by default — see `--unknown` for the
+  utility-like ones (typos, dead tokens) and `--unknown-all` for the raw list.
 
 ## Install & usage
 
@@ -269,7 +270,8 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | `--format <human\|json\|github>` | `human` | Output format. `github` prints one `::error` [workflow-command annotation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) per ghost **occurrence** (every location, `--max-locations` is ignored) plus a one-line summary on stderr; see *CI*. |
 | `--json` | off | Alias for `--format json`: a machine-readable report on stdout. Unchanged. |
 | `--max-annotations <n>` | `50` | `github` only: annotations printed before the rest are folded into one `::notice::tw-ghost: K more annotations omitted`; `0` = all. |
-| `--unknown` | off | Also list utility-looking classes that produce no CSS in stock *or* project (typo detection), and classes whose utility works but whose variant chain this config does not know (`unknownVariant`). |
+| `--unknown` | off | Also list the **utility-like** unknowns — classes that produce no CSS in stock *or* project but whose prefix is a Tailwind utility and whose value looks like one it could take (`text-mm`, `px-13`, `rounded-xll`; typos and dead tokens) — sorted by occurrence count, then name; plus classes whose utility works but whose variant chain this config does not know (`unknownVariant`). Identifiers that merely share a root (`my-page`, `no-op`, `bottom-start`) are not shown. |
+| `--unknown-all` | off | With `--unknown`: list every raw unknown token instead of the utility-like subset (every word, identifier and URL the extractor saw — on a real app this is tens of thousands of lines). Same sort order. |
 | `--max-locations <n>` | `3` | Locations kept per class; `0` = all. Must be a non-negative integer (`3abc` is rejected with exit 2). |
 | `--ignore <regex>` | – | Skip classes whose name matches; repeatable. |
 | `--allow-empty` | off | Exit `0` with an empty report when no file matches / nothing is configured to scan. Without it that is exit `2`, so a mistyped glob cannot silently pass CI. |
@@ -357,8 +359,11 @@ The three `unknown*` counters in `summary` are always filled, even without `--un
 - `summary.unknownVariant` — candidates whose bare utility works in your config but whose variant
   chain does not (`bogus:p-4` when `p-4` is fine). Typically a typo in the variant.
 
-The `unknown` and `unknownVariant` arrays are only filled with `--unknown`; `unknown` is filtered
-to utility-looking names.
+The `unknown` and `unknownVariant` arrays are only filled with `--unknown`. `unknown` holds the
+utility-like subset (`summary.unknownUtilityLike` entries) unless `--unknown-all` is also given,
+in which case it holds every raw unknown (`summary.unknown` entries); both are sorted by `count`
+descending, then `class`. The two summary counters are the same either way, so a consumer can
+tell which list it got from `unknown.length`.
 
 **Several configs** (`--all-configs`, or `--config` resolving to more than one file): the document
 becomes `{ version, configs, summary, durationMs }`. Each `configs[]` entry is `{ config, …report }`
@@ -475,6 +480,7 @@ const report = await analyze({
   globs: ['src/**/*.tsx'],      // optional, defaults to the config's content globs
   ignore: [/^legacy-/],
   unknown: false,
+  unknownAll: false,            // with unknown: raw list instead of the utility-like subset
   allowEmpty: false,            // true → empty report instead of TwGhostConfigError
   maxLocations: 3,
   suggestions: true,
@@ -643,12 +649,40 @@ project:
 - **Extractor noise is never judged by its bare utility.** A token such as `class="tablet:text-sm`
   (quote included) stays `unknown`; the real `tablet:text-sm` next to it is still reported.
 - **Unknown-list heuristic.** `--unknown` keeps a candidate only if, after splitting off a
-  plausible variant chain, the utility matches `/^!?-?[a-z][a-z0-9-]*-[^\s]+$/` (or, under a
-  variant chain, `/^!?-?[a-z][^\s]*$/`), it does not start with `data-`/`aria-`/URL schemes, does
-  not end with `-` or the separator (template-literal stubs such as `max-h-${x}`), and its root
-  (`text` in `text-smm`) is a core Tailwind utility root or one observed in the generated CSS.
-  Custom plugin utilities that were never used correctly anywhere are filtered out along with
-  ordinary words. Ambiguities were resolved towards fewer false positives.
+  plausible variant chain and the project `prefix`, it is shaped like a class (lowercase, digits,
+  `-` `.` `/` `%`, balanced `[...]` without a `${` hole; no punctuation tail such as `px-16)` or
+  `text-black,`), it does not start with `data-`/`aria-`/URL schemes, does not end with `-` or
+  the separator (template-literal stubs such as `max-h-${x}`), its **prefix** is a value-taking
+  core utility (`text`, `min-h`, `rounded-tl`, … — longest match) or a root the generated CSS
+  proved to exist (custom plugins), and its **value** looks like one that utility could take:
+  numeric / fraction / `[arbitrary]`, a generic keyword (`auto`, `full`, `none`, `px`,
+  `screen`, …), a key of the theme sections that utility reads (project *and* stock — `text` reads
+  `fontSize` + `textColor`), a keyword of that utility (`flex-col`, `justify-between`), a value
+  observed in the generated CSS, one edit away from any of those (`xll` → `xl`, `mm` → `m`), or the
+  head of a nested key (`red` when `red-500` exists). A `/modifier` must be numeric, arbitrary or
+  an `opacity` / `lineHeight` key. Everything else is filtered out along with ordinary words —
+  including a dead token whose value is nowhere near a real one (`text-danger` with no `danger*`
+  color, `items-between`, `pb-safe` from a plugin that was never used correctly), a bare prefix
+  (`max-h`, `space-y`) and a typo in the prefix itself (`tetx-sm`). Ambiguities were resolved
+  towards fewer false positives; `--unknown-all` is the escape hatch.
+
+### Known sources of noise in `--unknown`
+
+What still gets through the utility-like filter, measured on a large real-world app (≈93,000 raw
+unknowns → 20 listed, of which roughly two thirds were genuine typos or dead tokens):
+
+- **Numeric values that are not classes.** `bg-0` next to a `bg-0.png` asset, `content-1`,
+  `to-1`, `z-1` from prose or test data: a Tailwind prefix followed by a number is always
+  accepted, because that is exactly what a dead scale key looks like (`mt-15`, `gap-125`).
+- **Dead design-token names.** `hover:bg-surface-secondary`, `fill-on-color-pressed` when the
+  token was renamed or removed: correctly listed, but the fix is usually in the theme, not the
+  class.
+- **Generic keywords on the wrong utility.** `peer-focus:ring-full`, `content-auto`: `full` /
+  `auto` are accepted for every prefix.
+- **Inline CSS and prose** only reach `unknownVariant` (`display:flex`, see *false positives*),
+  never the utility-like list — but a class glued to a sentence in a comment (`px-16),`) is
+  dropped by the shape check rather than reported, so the raw list (`--unknown-all`) is the place
+  to look for those.
 
 ## Roadmap
 

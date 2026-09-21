@@ -91,6 +91,19 @@ describe('analyze — replaced-scale fixture', async () => {
     expect(unknown).not.toContain('aria-hidden');
   });
 
+  it('unknownAll swaps the utility-like subset for the raw list, sorted by count then name', async () => {
+    const all = await analyze({ cwd: fixture('replaced-scale'), unknown: true, unknownAll: true });
+    expect(all.unknown.length).toBe(all.summary.unknown);
+    expect(all.summary.unknownUtilityLike).toBe(1);
+    const names = all.unknown.map((u) => u.class);
+    expect(names).toContain('text-smm');
+    expect(names).toContain('swiper-slide');
+    const sorted = [...all.unknown].sort(
+      (a, b) => b.count - a.count || a.class.localeCompare(b.class),
+    );
+    expect(all.unknown).toEqual(sorted);
+  });
+
   it('keeps the raw unknown count and adds the utility-like subset to the summary', () => {
     expect(report.summary.unknown).toBeGreaterThan(report.summary.unknownUtilityLike);
     expect(report.summary.unknownUtilityLike).toBe(report.unknown.length);
