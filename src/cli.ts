@@ -4,6 +4,7 @@ import pc from 'picocolors';
 import { analyze } from './analyze.js';
 import { describeEnvironment, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
+import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
 import { formatHuman } from './report.js';
 
 const require = createRequire(import.meta.url);
@@ -21,7 +22,11 @@ Options
                             (hoisted / strict monorepos where the config's folder cannot reach it)
       --env                 print the resolved environment (config, tailwindcss, postcss, globs)
                             and exit — paste this into bug reports; honours --json
-      --json                machine-readable JSON on stdout
+      --format <mode>       human | json | github (default: human)
+                            github = one ::error workflow-command annotation per ghost occurrence
+      --json                alias for --format json
+      --max-annotations <n> github: annotations printed before the rest are summarised in a
+                            ::notice, 0 = all (default: 50)
       --unknown             also list utility-looking classes that produce no CSS anywhere,
                             and classes whose variant chain this config does not know
       --max-locations <n>   locations printed per class, 0 = all (default: 3)
@@ -41,6 +46,7 @@ Examples
   npx tw-ghost
   npx tw-ghost "src/**/*.tsx" --config apps/web/tailwind.config.ts
   npx tw-ghost --json --unknown --ignore "^legacy-"
+  npx tw-ghost --format github        # in a GitHub Actions step
 `;
 
 /**
@@ -62,7 +68,9 @@ async function main(): Promise<never> {
     config: { type: 'string', short: 'c' },
     tailwind: { type: 'string' },
     env: { type: 'boolean', default: false },
+    format: { type: 'string' },
     json: { type: 'boolean', default: false },
+    'max-annotations': { type: 'string', default: String(DEFAULT_MAX_ANNOTATIONS) },
     unknown: { type: 'boolean', default: false },
     'max-locations': { type: 'string', default: '3' },
     ignore: { type: 'string', multiple: true, default: [] as string[] },
@@ -83,11 +91,28 @@ async function main(): Promise<never> {
 
   if (values.help) return exitAfterWrite(process.stdout, HELP, 0);
   if (values.version) return exitAfterWrite(process.stdout, `${version}\n`, 0);
+  const format = values.format ?? (values.json ? 'json' : 'human');
+  if (format !== 'human' && format !== 'json' && format !== 'github') {
+    return fail(`--format must be "human", "json" or "github" (got ${JSON.stringify(format)})`);
+  }
+  if (values.json && format !== 'json') {
+    return fail(
+      `--json is an alias for --format json; it cannot be combined with --format ${format}`,
+    );
+  }
+  const maxAnnotationsRaw = values['max-annotations'] ?? String(DEFAULT_MAX_ANNOTATIONS);
+  if (!/^\d+$/.test(maxAnnotationsRaw)) {
+    return fail(
+      `--max-annotations must be a non-negative integer (got ${JSON.stringify(maxAnnotationsRaw)})`,
+    );
+  }
+  const maxAnnotations = Number.parseInt(maxAnnotationsRaw, 10);
   if (values.env) {
     const env = describeEnvironment({ config: values.config, tailwind: values.tailwind });
-    const text = values.json
-      ? `${JSON.stringify({ version, ...env }, null, 2)}\n`
-      : `${formatEnv(env, version)}\n`;
+    const text =
+      format === 'json'
+        ? `${JSON.stringify({ version, ...env }, null, 2)}\n`
+        : `${formatEnv(env, version)}\n`;
     return exitAfterWrite(process.stdout, text, 0);
   }
   const maxLocationsRaw = values['max-locations'] ?? '3';
@@ -108,7 +133,8 @@ async function main(): Promise<never> {
     allowEmpty: values['allow-empty'],
     ignore: values.ignore,
     unknown: values.unknown,
-    maxLocations,
+    // github annotates every occurrence, so it needs the unclipped location list (0 = all)
+    maxLocations: format === 'github' ? 0 : maxLocations,
     suggestions: !values['no-suggestions'],
     tailwind: values.tailwind,
   });
@@ -116,9 +142,16 @@ async function main(): Promise<never> {
     process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
   }
 
-  const output = values.json
-    ? `${JSON.stringify({ version, ...report }, null, 2)}\n`
-    : `${formatHuman(report, { color: !values['no-color'] })}\n`;
+  let output: string;
+  if (format === 'json') {
+    output = `${JSON.stringify({ version, ...report }, null, 2)}\n`;
+  } else if (format === 'github') {
+    const gh = formatGithub(report, { maxAnnotations });
+    process.stderr.write(`${gh.summary}\n`);
+    output = gh.output === '' ? '' : `${gh.output}\n`;
+  } else {
+    output = `${formatHuman(report, { color: !values['no-color'] })}\n`;
+  }
   return exitAfterWrite(
     process.stdout,
     output,

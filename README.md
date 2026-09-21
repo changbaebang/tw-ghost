@@ -89,6 +89,35 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 npx tw-ghost --json --ignore "^legacy-" --unknown
 ```
 
+### CI
+
+In a GitHub Actions step, `--format github` turns every ghost occurrence into an inline
+annotation on the pull request (the exit code is the same as for the other formats, so the step
+still fails):
+
+```yaml
+- run: npx tw-ghost --format github
+```
+
+Each line is a workflow command, one per occurrence, with `file=` relative to `GITHUB_WORKSPACE`
+(or to the current directory when the file is outside it / the variable is unset):
+
+```
+::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m
+```
+
+`unknown` / `unknownVariant` findings are only annotated with `--unknown`, as `::warning`
+with the title `tw-ghost (unknown)`. `%`, CR and LF are escaped in every message and `,` / `:`
+additionally in `file=`, per the workflow-command spec. A one-line summary
+(`tw-ghost: 5 ghost classes, 8 occurrences`) goes to stderr so it does not become an annotation.
+
+GitHub only surfaces **10 annotations of each level (error / warning / notice) per step, and
+50 per job** in the checks UI; the rest are still in the log but not shown inline
+([limits documented in `actions/toolkit`](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations)).
+`--max-annotations` (default `50`) caps what is printed and ends the output with
+`::notice::tw-ghost: K more annotations omitted` so the cut is visible. `--json` is unchanged and
+remains the format for tooling.
+
 Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
 `postcss` ^8 is an *optional* peer: tw-ghost uses the project's `postcss` when one is installed
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
@@ -201,7 +230,9 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | `-c, --config <path>` | walk up from cwd | `tailwind.config.{ts,js,cjs,mjs}` to load. |
 | `--tailwind <dir>` | config's directory | Resolve `tailwindcss` (and `postcss`) from this directory instead of the config file's. For layouts where the config's folder cannot reach the install. The config file itself still loads from its own location. |
 | `--env` | off | Print the resolved environment (config, `tailwindcss` version + path, `postcss`, extractor, content globs, warnings) and exit 0 — or exit 2 with the preflight error. Combine with `--json`. |
-| `--json` | off | Print a machine-readable report on stdout. |
+| `--format <human\|json\|github>` | `human` | Output format. `github` prints one `::error` [workflow-command annotation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) per ghost **occurrence** (every location, `--max-locations` is ignored) plus a one-line summary on stderr; see *CI*. |
+| `--json` | off | Alias for `--format json`: a machine-readable report on stdout. Unchanged. |
+| `--max-annotations <n>` | `50` | `github` only: annotations printed before the rest are folded into one `::notice::tw-ghost: K more annotations omitted`; `0` = all. |
 | `--unknown` | off | Also list utility-looking classes that produce no CSS in stock *or* project (typo detection), and classes whose utility works but whose variant chain this config does not know (`unknownVariant`). |
 | `--max-locations <n>` | `3` | Locations kept per class; `0` = all. Must be a non-negative integer (`3abc` is rejected with exit 2). |
 | `--ignore <regex>` | – | Skip classes whose name matches; repeatable. |

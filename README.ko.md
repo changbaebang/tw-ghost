@@ -89,6 +89,34 @@ npx tw-ghost "src/**/*.{ts,tsx}" --config apps/web/tailwind.config.ts
 npx tw-ghost --json --ignore "^legacy-" --unknown
 ```
 
+### CI
+
+GitHub Actions 스텝에서 `--format github` 을 주면 유령 발생 위치마다 PR 인라인 주석이 달린다
+(종료 코드는 다른 형식과 같으므로 스텝은 여전히 실패한다):
+
+```yaml
+- run: npx tw-ghost --format github
+```
+
+각 줄은 workflow command 이며 발생 위치당 하나다. `file=` 은 `GITHUB_WORKSPACE` 기준 상대 경로다
+(파일이 그 밖에 있거나 변수가 없으면 현재 디렉터리 기준):
+
+```
+::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m
+```
+
+`unknown` / `unknownVariant` 는 `--unknown` 을 줄 때만, 제목 `tw-ghost (unknown)` 의 `::warning`
+으로 출력된다. workflow-command 규격대로 모든 메시지에서 `%`·CR·LF 를, `file=` 에서는 추가로
+`,` / `:` 를 이스케이프한다. 한 줄 요약(`tw-ghost: 5 ghost classes, 8 occurrences`)은 주석이 되지
+않도록 stderr 로 나간다.
+
+GitHub 은 체크 UI 에 **스텝당 레벨(error / warning / notice)별 10개, job 당 50개** 의 주석만
+보여준다. 나머지는 로그에는 남지만 인라인으로 표시되지 않는다
+([`actions/toolkit` 에 문서화된 제한](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations)).
+`--max-annotations`(기본 `50`)로 출력 수를 제한하며, 잘린 경우 마지막에
+`::notice::tw-ghost: K more annotations omitted` 를 출력해 잘렸음을 보이게 한다. `--json` 은
+변경 없이 도구 연동용 형식으로 남는다.
+
 Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
 `postcss` ^8 은 *선택적* peer 다: 설정 파일 옆에 `postcss` 가 설치되어 있으면 그것을 쓰고, 없으면
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
@@ -199,7 +227,9 @@ darkMode     "class"
 | `-c, --config <path>` | cwd 에서 위로 탐색 | 로드할 `tailwind.config.{ts,js,cjs,mjs}`. |
 | `--tailwind <dir>` | 설정 파일 디렉터리 | `tailwindcss`(와 `postcss`)를 설정 파일 디렉터리 대신 이 디렉터리에서 해석. 설정 폴더에서 설치본에 닿지 못하는 레이아웃용. 설정 파일 자체는 여전히 제 위치에서 로드된다. |
 | `--env` | 꺼짐 | 해석한 환경(설정, `tailwindcss` 버전 + 경로, `postcss`, extractor, content glob, 경고)을 출력하고 0 으로 종료 — 또는 사전 점검 오류와 함께 2 로 종료. `--json` 과 조합 가능. |
-| `--json` | 꺼짐 | stdout 에 기계가 읽을 수 있는 리포트 출력. |
+| `--format <human\|json\|github>` | `human` | 출력 형식. `github` 는 유령 **발생 위치마다** `::error` [workflow-command 주석](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) 한 줄을 출력한다(모든 위치, `--max-locations` 무시) 그리고 stderr 에 한 줄 요약. *CI* 참고. |
+| `--json` | 꺼짐 | `--format json` 의 별칭: stdout 에 기계가 읽을 수 있는 리포트 출력. 변경 없음. |
+| `--max-annotations <n>` | `50` | `github` 전용: 이 수만큼 주석을 출력하고 나머지는 `::notice::tw-ghost: K more annotations omitted` 한 줄로 접는다. `0` = 전부. |
 | `--unknown` | 꺼짐 | 기본 Tailwind 에서도 프로젝트에서도 CSS 가 안 나오는 유틸리티 모양 클래스(오타 탐지)와, 유틸리티는 동작하지만 variant 체인을 이 설정이 모르는 클래스(`unknownVariant`)도 나열. |
 | `--max-locations <n>` | `3` | 클래스당 유지할 위치 수. `0` = 전부. 0 이상의 정수만 허용 (`3abc` 는 종료 코드 2 로 거부). |
 | `--ignore <regex>` | – | 이름이 일치하는 클래스를 건너뜀. 반복 지정 가능. |
