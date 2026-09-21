@@ -85,6 +85,66 @@ describe('cli (dist/cli.js)', () => {
     expect(JSON.parse(stdout).unknown.map((u: { class: string }) => u.class)).toEqual(['text-smm']);
   });
 
+  describe('--unknown / --unknown-all (unknown-noise fixture)', () => {
+    const cwd = fixture('unknown-noise');
+    const names = (list: Array<{ class: string }>) => list.map((u) => u.class);
+
+    it('--unknown --json: `unknown` holds the utility-like subset, sorted by count then name', () => {
+      const { code, stdout } = run(['--unknown', '--json'], cwd);
+      expect(code).toBe(0);
+      const json = JSON.parse(stdout);
+      expect(names(json.unknown)).toEqual(['text-mm', 'px-13', 'gap-2.25', 'rounded-xll']);
+      expect(json.unknown.map((u: { count: number }) => u.count)).toEqual([3, 2, 1, 1]);
+      expect(json.summary.unknownUtilityLike).toBe(4);
+      expect(json.summary.unknown).toBeGreaterThan(4);
+      expect(json.unknownVariant).toEqual([]);
+    });
+
+    it('--unknown --json excludes identifiers that merely share a utility root', () => {
+      const { stdout } = run(['--unknown', '--json'], cwd);
+      const listed = names(JSON.parse(stdout).unknown);
+      for (const id of ['my-page', 'no-op', 'bottom-start', 'box-center', 'data-state']) {
+        expect(listed, id).not.toContain(id);
+      }
+    });
+
+    it('--unknown-all --json: `unknown` holds every raw unknown, summary counts unchanged', () => {
+      const { stdout } = run(['--unknown', '--unknown-all', '--json'], cwd);
+      const json = JSON.parse(stdout);
+      const listed = names(json.unknown);
+      expect(json.unknown.length).toBe(json.summary.unknown);
+      expect(json.summary.unknownUtilityLike).toBe(4);
+      for (const c of ['text-mm', 'my-page', 'no-op', 'bottom-start', 'box-center', 'data-state']) {
+        expect(listed, c).toContain(c);
+      }
+      // sorted by count desc, then name
+      const counts = json.unknown.map((u: { count: number }) => u.count);
+      expect(counts).toEqual([...counts].sort((a, b) => b - a));
+      expect(listed.indexOf('no-op')).toBeLessThan(listed.indexOf('text-mm')); // 4 > 3
+      expect(listed.indexOf('bottom-start')).toBeLessThan(listed.indexOf('px-13')); // 2 = 2, b < p
+    });
+
+    it('--unknown-all without --unknown lists nothing', () => {
+      const { stdout } = run(['--unknown-all', '--json'], cwd);
+      expect(JSON.parse(stdout).unknown).toEqual([]);
+    });
+
+    it('human output: a header with shown / raw counts and the --unknown-all hint', () => {
+      const withFlag = run(['--unknown', '--no-color'], cwd).stdout;
+      expect(withFlag).toMatch(
+        /\? Unknown utility-like classes \(4 shown, \d+ raw; use --unknown-all for everything\):/,
+      );
+      expect(withFlag).toContain('text-mm  (3 occurrences)');
+      expect(withFlag.indexOf('text-mm')).toBeLessThan(withFlag.indexOf('px-13'));
+      expect(withFlag).not.toContain('no-op');
+      const all = run(['--unknown', '--unknown-all', '--no-color'], cwd).stdout;
+      expect(all).toMatch(
+        /\? Unknown classes, everything \(\d+ shown, 4 utility-like; drop --unknown-all to see only those\):/,
+      );
+      expect(all).toContain('no-op  (4 occurrences)');
+    });
+  });
+
   it('--unknown lists unknown-variant classes in their own section', () => {
     const { stdout } = run(['--unknown', '--no-color'], fixture('variants'));
     expect(stdout).toContain('9 ghost classes');

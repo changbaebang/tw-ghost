@@ -22,8 +22,11 @@ Options
       --env                 print the resolved environment (config, tailwindcss, postcss, globs)
                             and exit — paste this into bug reports; honours --json
       --json                machine-readable JSON on stdout
-      --unknown             also list utility-looking classes that produce no CSS anywhere,
-                            and classes whose variant chain this config does not know
+      --unknown             also list utility-like classes that produce no CSS anywhere
+                            (typos, dead tokens), and classes whose variant chain this
+                            config does not know
+      --unknown-all         with --unknown: list every raw unknown token instead of the
+                            utility-like subset (words, identifiers, URLs — large)
       --max-locations <n>   locations printed per class, 0 = all (default: 3)
       --ignore <regex>      skip classes matching this regex (repeatable)
       --allow-empty         exit 0 instead of 2 when no files match / nothing to scan
@@ -64,6 +67,7 @@ async function main(): Promise<never> {
     env: { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
     unknown: { type: 'boolean', default: false },
+    'unknown-all': { type: 'boolean', default: false },
     'max-locations': { type: 'string', default: '3' },
     ignore: { type: 'string', multiple: true, default: [] as string[] },
     'allow-empty': { type: 'boolean', default: false },
@@ -108,6 +112,7 @@ async function main(): Promise<never> {
     allowEmpty: values['allow-empty'],
     ignore: values.ignore,
     unknown: values.unknown,
+    unknownAll: values['unknown-all'],
     maxLocations,
     suggestions: !values['no-suggestions'],
     tailwind: values.tailwind,
@@ -118,7 +123,7 @@ async function main(): Promise<never> {
 
   const output = values.json
     ? `${JSON.stringify({ version, ...report }, null, 2)}\n`
-    : `${formatHuman(report, { color: !values['no-color'] })}\n`;
+    : `${formatHuman(report, { color: !values['no-color'], unknownAll: values['unknown-all'] })}\n`;
   return exitAfterWrite(
     process.stdout,
     output,

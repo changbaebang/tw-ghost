@@ -6,6 +6,8 @@ import type { Finding, GhostFinding, Report } from './analyze.js';
 
 export interface FormatOptions {
   color?: boolean | undefined;
+  /** `report.unknown` holds every raw unknown (`--unknown-all`), not the utility-like subset. */
+  unknownAll?: boolean | undefined;
 }
 
 const plural = (n: number, word: string, many = `${word}s`): string =>
@@ -55,11 +57,12 @@ export function formatHuman(report: Report, options: FormatOptions = {}): string
   }
 
   if (report.unknown.length > 0) {
-    out.push(
-      color.yellow(
-        `? ${plural(report.unknown.length, 'unknown utility-looking class', 'unknown utility-looking classes')} (no CSS in stock or project — typo or custom CSS):`,
-      ),
-    );
+    const shown = report.unknown.length;
+    const raw = report.summary.unknown;
+    const header = options.unknownAll
+      ? `? Unknown classes, everything (${shown} shown, ${report.summary.unknownUtilityLike} utility-like; drop --unknown-all to see only those):`
+      : `? Unknown utility-like classes (${shown} shown, ${raw} raw; use --unknown-all for everything):`;
+    out.push(color.yellow(header));
     out.push('');
     for (const u of report.unknown) out.push(...formatFinding(u, '', color), '');
   }
