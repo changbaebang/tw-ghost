@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CLI, fixture } from './helpers.js';
 
@@ -209,5 +210,224 @@ describe('cli (dist/cli.js)', () => {
     const version = run(['--version'], fixture('clean'));
     expect(version.code).toBe(0);
     expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe('cli: several configs', () => {
+  const monorepo = fixture('monorepo');
+  const parse = (stdout: string) => JSON.parse(stdout);
+
+  it('a single --config keeps the byte-compatible single-config JSON shape', () => {
+    const viaConfig = run(
+      ['--config', 'apps/web/tailwind.config.ts', '--json', '--no-suggestions'],
+      monorepo,
+    );
+    const viaGlob = run(
+      ['--config', 'apps/w*/tailwind.config.ts', '--json', '--no-suggestions'],
+      monorepo,
+    );
+    const viaCwd = run(['--json', '--no-suggestions'], path.join(monorepo, 'apps/web'));
+    expect(viaConfig.code).toBe(1);
+    expect(viaGlob.code).toBe(1);
+    const strip = (s: string) => s.replace(/"durationMs": \d+/, '"durationMs": 0');
+    expect(strip(viaGlob.stdout)).toBe(strip(viaConfig.stdout));
+    const json = parse(viaConfig.stdout);
+    expect(Object.keys(json)).toEqual([
+      'version',
+      'configPath',
+      'tailwindVersion',
+      'extractor',
+      'warnings',
+      'filesScanned',
+      'candidateCount',
+      'summary',
+      'ghosts',
+      'unknown',
+      'unknownVariant',
+      'durationMs',
+    ]);
+    expect(json).not.toHaveProperty('configs');
+    // Same ghosts as running from the app directory; only the relative file paths differ.
+    expect(parse(viaCwd.stdout).ghosts.map((g: { class: string }) => g.class)).toEqual(
+      json.ghosts.map((g: { class: string }) => g.class),
+    );
+  });
+
+  it('--config glob → multi JSON with per-config reports and an aggregated summary', () => {
+    const { code, stdout, stderr } = run(
+      ['--config', 'apps/*/tailwind.config.*', '--json', '--no-suggestions'],
+      monorepo,
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe('');
+    const json = parse(stdout);
+    expect(Object.keys(json)).toEqual(['version', 'configs', 'summary', 'durationMs']);
+    expect(json.configs.map((c: { config: string }) => c.config)).toEqual([
+      'apps/admin/tailwind.config.js',
+      'apps/web/tailwind.config.ts',
+    ]);
+    expect(Object.keys(json.configs[0])).toEqual([
+      'config',
+      'configPath',
+      'tailwindVersion',
+      'extractor',
+      'warnings',
+      'filesScanned',
+      'candidateCount',
+      'summary',
+      'ghosts',
+      'unknown',
+      'unknownVariant',
+      'durationMs',
+    ]);
+    expect(json.configs[0].ghosts.map((g: { class: string }) => g.class)).toEqual(['p-2', 'p-3']);
+    expect(json.configs[1].ghosts.map((g: { class: string }) => g.class)).toEqual([
+      'text-sm',
+      'text-xs',
+    ]);
+    expect(json.summary).toMatchObject({ configs: 2, failed: 0, filesScanned: 4, ghost: 4 });
+  });
+
+  it('repeated --config and --all-configs find the same two configs', () => {
+    const repeated = run(
+      [
+        '--config',
+        'apps/web/tailwind.config.ts',
+        '--config',
+        'apps/admin/tailwind.config.js',
+        '--json',
+        '--no-suggestions',
+      ],
+      monorepo,
+    );
+    const all = run(['--all-configs', '--json', '--no-suggestions'], monorepo);
+    expect(repeated.code).toBe(1);
+    expect(all.code).toBe(1);
+    const names = (s: string) => parse(s).configs.map((c: { config: string }) => c.config);
+    expect(names(all.stdout)).toEqual(names(repeated.stdout));
+    expect(names(all.stdout)).toHaveLength(2);
+  });
+
+  it('prints one "== config (N files, K ghosts)" block per config in human output', () => {
+    const { code, stdout } = run(['--all-configs', '--no-color'], monorepo);
+    expect(code).toBe(1);
+    expect(stdout).toContain('== apps/admin/tailwind.config.js (2 files, 2 ghosts)');
+    expect(stdout).toContain('== apps/web/tailwind.config.ts (2 files, 2 ghosts)');
+    expect(stdout).toContain('total: 2 configs, 4 files');
+    expect(stdout).toContain('4 ghost in');
+    const admin = stdout.indexOf('== apps/admin');
+    const web = stdout.indexOf('== apps/web');
+    expect(stdout.slice(admin, web)).toContain('p-3  (1 occurrence)');
+    expect(stdout.slice(web)).toContain('text-sm  (1 occurrence)');
+  });
+
+  it('positional globs apply to every config; --fail-on none exits 0', () => {
+    const { code, stdout } = run(
+      ['packages/shared/**/*.tsx', '--all-configs', '--json', '--fail-on', 'none'],
+      monorepo,
+    );
+    expect(code).toBe(0);
+    const json = parse(stdout);
+    expect(json.configs.map((c: { filesScanned: number }) => c.filesScanned)).toEqual([1, 1]);
+    expect(json.summary.ghost).toBe(2);
+  });
+
+  it('--all-configs exits 2 with the searched root when nothing is found', () => {
+    const cwd = path.join(fixture('clean'), 'src');
+    const { code, stderr, stdout } = run(['--all-configs'], cwd);
+    expect(code).toBe(2);
+    expect(stdout).toBe('');
+    expect(stderr).toContain(`--all-configs found no tailwind.config.{ts,js,cjs,mjs} under ${cwd}`);
+  });
+
+  it('exits 2 when a --config glob matches nothing', () => {
+    const { code, stderr } = run(['--config', 'nowhere/*/tailwind.config.js'], monorepo);
+    expect(code).toBe(2);
+    expect(stderr).toContain('matched no file');
+  });
+
+  it('reports a config that throws, keeps the others, and exits 2', () => {
+    const { code, stdout, stderr } = run(
+      [
+        '--all-configs',
+        '--config',
+        '../broken-config/tailwind.config.js',
+        '--json',
+        '--no-suggestions',
+      ],
+      monorepo,
+    );
+    expect(code).toBe(2);
+    expect(stderr).toContain('1 of 3 configs failed: ../broken-config/tailwind.config.js');
+    const json = parse(stdout);
+    expect(json.configs[0]).toEqual({
+      config: '../broken-config/tailwind.config.js',
+      error: expect.stringContaining('boom: this config cannot be loaded'),
+    });
+    expect(json.configs.slice(1).every((c: { error?: string }) => c.error === undefined)).toBe(
+      true,
+    );
+    expect(json.summary).toMatchObject({ configs: 3, failed: 1, ghost: 4 });
+
+    const human = run(
+      ['--all-configs', '--config', '../broken-config/tailwind.config.js', '--no-color'],
+      monorepo,
+    );
+    expect(human.code).toBe(2);
+    expect(human.stdout).toContain('== ../broken-config/tailwind.config.js (failed)');
+    expect(human.stdout).toContain('boom: this config cannot be loaded');
+    expect(human.stdout).toContain('total: 3 configs, 1 failed, 4 files');
+  });
+
+  it('--env prints one block per config and honours --json', () => {
+    const human = run(['--env', '--all-configs'], monorepo);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('== apps/admin/tailwind.config.js\n');
+    expect(human.stdout).toContain('== apps/web/tailwind.config.ts\n');
+    expect(human.stdout.match(/^tailwindcss {2}/gm)).toHaveLength(2);
+    const json = run(['--env', '--all-configs', '--json'], monorepo);
+    expect(json.code).toBe(0);
+    const parsed = parse(json.stdout);
+    expect(Object.keys(parsed)).toEqual(['version', 'configs']);
+    expect(parsed.configs.map((c: { config: string }) => c.config)).toEqual([
+      'apps/admin/tailwind.config.js',
+      'apps/web/tailwind.config.ts',
+    ]);
+    expect(parsed.configs[0].content.globs).toHaveLength(2);
+
+    const broken = run(
+      ['--env', '--all-configs', '--config', '../broken-config/tailwind.config.js', '--json'],
+      monorepo,
+    );
+    expect(broken.code).toBe(2);
+    expect(parse(broken.stdout).configs[0]).toMatchObject({
+      config: '../broken-config/tailwind.config.js',
+      error: expect.stringContaining('boom'),
+    });
+  });
+});
+
+describe('cli: several configs with --format github', () => {
+  it('streams annotations from every config under one cap and summarizes on stderr', () => {
+    const res = run(
+      ['--all-configs', '--format', 'github', '--no-suggestions'],
+      fixture('monorepo'),
+    );
+    expect(res.code).toBe(1);
+    const lines = res.stdout.trim().split('\n');
+    expect(lines.every((l) => l.startsWith('::error ') || l.startsWith('::notice::'))).toBe(true);
+    expect(lines.filter((l) => l.startsWith('::error ')).length).toBeGreaterThan(1);
+    expect(res.stderr).toMatch(/tw-ghost: \d+ ghost classes, \d+ occurrences across 2 configs/);
+    const capped = run(
+      ['--all-configs', '--format', 'github', '--max-annotations', '1', '--no-suggestions'],
+      fixture('monorepo'),
+    );
+    expect(
+      capped.stdout
+        .trim()
+        .split('\n')
+        .filter((l) => l.startsWith('::error ')).length,
+    ).toBe(1);
+    expect(capped.stdout).toMatch(/::notice::tw-ghost: \d+ more annotations omitted/);
   });
 });
