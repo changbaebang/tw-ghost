@@ -51,6 +51,8 @@ export interface Finding {
 }
 
 export interface GhostFinding extends Finding {
+  /** Every file the class occurs in (never clipped by `maxLocations`); used by `--fix-map`. */
+  files: string[];
   /** Declarations stock Tailwind would have emitted for this class (or for its bare utility). */
   stockCss: string[];
   /** Project classes with the same root that set the same CSS properties. */
@@ -74,6 +76,8 @@ export interface Report {
   configPath: string;
   tailwindVersion: string;
   extractor: 'project' | 'bundled';
+  /** The project's variant separator (`:` unless configured); `--fix-map` carries variants with it. */
+  separator: string;
   /**
    * Degraded-run notices: config features Tailwind applies at build time that tw-ghost does not
    * (`content.transform` / `content.extract`), or the bundled extractor fallback. The CLI prints
@@ -232,6 +236,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
         : (bareUtility.get(candidate) ?? candidate);
       ghosts.push({
         ...finding,
+        files: Array.from(new Set(locations.map((l) => l.file))).sort(),
         stockCss: stockCss.declarations.get(stockKey) ?? [],
         suggestions: [],
       });
@@ -262,6 +267,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
     configPath,
     tailwindVersion: project.tailwindVersion,
     extractor,
+    separator,
     warnings,
     filesScanned: files.length,
     candidateCount: candidates.length,

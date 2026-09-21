@@ -22,6 +22,19 @@ export {
 export { describeEnvironment, describeProject, type EnvReport, formatEnv } from './env.js';
 export { TwGhostConfigError } from './errors.js';
 export { isWholeToken, type Location, scanContent } from './extract.js';
+export {
+  type ApplyFixMapOptions,
+  applyFixMap,
+  applyFixMapToText,
+  draftFixMap,
+  type FixEdit,
+  type FixMap,
+  type FixMapDraft,
+  type FixResult,
+  formatFix,
+  parseFixMap,
+  replacementFor,
+} from './fix.js';
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
   assertSupportedTailwind,

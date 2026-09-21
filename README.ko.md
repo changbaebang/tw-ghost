@@ -206,6 +206,9 @@ darkMode     "class"
 | `--allow-empty` | 꺼짐 | 일치하는 파일이 없거나 스캔할 설정이 없을 때 빈 리포트로 `0` 종료. 없으면 종료 코드 `2` 이므로 glob 오타가 CI 를 조용히 통과할 수 없다. |
 | `--fail-on <ghost\|none>` | `ghost` | 종료 코드를 `1` 로 만드는 조건. |
 | `--no-suggestions` | 꺼짐 | 대체 클래스 탐색 생략 (테마가 아주 클 때 더 빠름). |
+| `--fix-map-init <file>` | – | 현재 유령 클래스로 **수정 맵 초안**을 쓰고 exit 0: 키는 bare 유틸리티(변형 제거) 하나당 하나, 값은 단일 제안·후보 목록·`null` 중 하나. 이미 있는 파일은 덮어쓰지 않는다. |
+| `--fix-map <file>` | – | 수정 맵 적용(*유령 클래스 고치기* 참고): 매핑된 유령의 모든 출현을 교체 또는 제거하고 변형·`!`·`-` 는 그대로 옮긴다. `--write` 가 없으면 **dry run**. 매핑되지 않은 유령이 남으면 exit 1 (`--fail-on none` 이면 0). |
+| `--write` | 꺼짐 | `--fix-map` 과 함께: 바뀐 파일을 실제로 쓴다. |
 | `--no-color` | 꺼짐 | ANSI 색상 비활성화 (`NO_COLOR` 도 존중). |
 | `-h, --help` / `-v, --version` | | |
 
@@ -286,12 +289,60 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 `unknown` 과 `unknownVariant` 배열은 `--unknown` 을 줄 때만 채워지며, `unknown` 은 유틸리티 모양
 이름만 남긴다.
 
+## 유령 클래스 고치기
+
+tw-ghost 는 대체 클래스를 스스로 추측하지 않는다. `text-sm` 이 어떤 디자인 시스템에서는 `text-l` 이고 다른
+곳에서는 `text-m` 인데, 그건 문자열 매칭이 아니라 디자인 결정이다. 대신 그 결정을 팀이 한 번 만들고 앱마다
+재사용하는 작은 JSON 파일로 바꾼다.
+
+```sh
+# 1. 현재 유령 클래스로 맵 초안 만들기
+npx tw-ghost --fix-map-init fixes.json
+```
+
+```jsonc
+// fixes.json (초안): 키는 bare 유틸리티 — 변형·"!"·"-" 는 도구가 처리한다
+{
+  "rounded":  ["rounded-0", "rounded-2", "rounded-4", "rounded-8"],   // 후보 여러 개: 하나 고르기
+  "text-sm":  ["text-l", "text-m", "text-s"],
+  "z-10":     "z-content-1",                                          // 제안이 정확히 하나
+  "min-w-px": null                                                    // 후보 없음: null = 제거
+}
+```
+
+모든 배열을 문자열 하나(또는 클래스를 지우려면 `null`)로 줄인 뒤:
+
+```sh
+# 2. 무엇이 바뀔지 보기 (아무것도 쓰지 않음)
+npx tw-ghost --fix-map fixes.json
+
+# 3. 적용
+npx tw-ghost --fix-map fixes.json --write
+```
+
+수정기가 지키는 규칙:
+
+- **토큰 단위로만.** `text-sm` 은 `md:text-sm`(이건 자기 bare 유틸리티로 따로 처리), `legacy-text-sm`,
+  `text-sm/50` 안에서 건드리지 않고, `p-3` 은 `p-30`, `p-3.5`, `!p-3` 안에서 건드리지 않는다.
+- **변형·`!`·`-` 는 그대로 옮긴다.** `{ "mt-3": "mt-4" }` 는 `lg:!-mt-3` 을 `lg:!-mt-4` 로 만든다. 커스텀
+  `separator` 도 존중한다.
+- **제거는 공백 하나를 같이 먹는다.** `class="a z-10 b"` → `class="a b"`; 혼자 있던 클래스는 `""` 가 된다 —
+  dry run 에서 그런 곳을 확인할 것.
+- **아무것도 추론하지 않는다.** 맵에 없는 유령은 유령으로 남는다: 실행은 여전히 exit 1 이고 *unmapped* 에
+  나열된다. 아무것도 매칭하지 않는 맵 항목은 *unused* 에 나열된다.
+- **매핑된 유령이 있는 파일만 연다**, 그리고 매칭이 있는 줄만 다시 쓴다. 줄 끝(LF / CRLF)은 유지된다.
+- 수정기는 문법 트리가 아니라 **텍스트**를 고친다. 클래스 문자열·템플릿 리터럴·`clsx`/`cva` 호출에는 안전하지만,
+  주석이나 클래스 목록이 아닌 문자열 안의 같은 토큰도 바꾼다. dry run 이 모든 편집을 `file:line:col` 로 보여
+  주니 `--write` 전에 읽을 것.
+
+`--json` 과 `--fix-map` 을 함께 쓰면 `{ "fix": { "write", "edits", "files", "unused", "unmapped" } }` 를 출력한다.
+
 ## 종료 코드
 
 | 코드 | 의미 |
 | --- | --- |
 | `0` | 유령 클래스 없음 (또는 `--fail-on none`), 또는 `--allow-empty` 를 준 빈 스캔. |
-| `1` | 유령 클래스가 하나 이상 발견됨. |
+| `1` | 유령 클래스가 하나 이상 발견됨; `--fix-map` 에서는 매핑되지 않은 유령이 하나 이상 남음. |
 | `2` | 사용법 또는 설정 오류: 잘못된 플래그·값(예: 정수가 아닌 `--max-locations`), 설정 파일 없음, 설정 로드 실패 또는 함수 export, `tailwindcss` 를 찾을 수 없음, 지원하지 않는 Tailwind 버전(4.x, ≤ 2.x, 3.0–3.2), **glob 에 일치하는 파일 없음 / 스캔할 것 없음** (`--allow-empty` 가 없을 때). 메시지를 포함한 전체 목록은 *실패하는 방식* 참고. |
 
 ## 프로그래밍 API
@@ -448,8 +499,9 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
 
 ## 로드맵
 
-- `--format github` (워크플로 어노테이션) 및 SARIF 출력.
+- SARIF 출력.
 - 파일 단위 `// tw-ghost-ignore` 주석.
+- 경로 범위를 지정한 `--fix-map` (공유 맵으로 모노레포의 앱 하나만 고치기).
 - CSS 파일 내 `@apply` 의 제대로 된 처리 (지금은 glob 에 포함되면 일반 텍스트로 스캔된다).
 - 아주 큰 모노레포를 위한 실행 간 후보 추출 캐시.
 - 비교 가능한 "생성 후 비교" 경로가 생기면 Tailwind v4 지원.
