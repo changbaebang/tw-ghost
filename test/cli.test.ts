@@ -175,7 +175,7 @@ describe('cli --fix-map round trip', () => {
     expect(again.code).toBe(2);
     expect(again.stderr).toContain('already exists');
 
-    const refused = run(['--fix-map', 'fixes.json', '--config', 'tailwind.config.ts'], dir);
+    const refused = run(['--fix-map', 'fixes.json', '--no-color', '--config', 'tailwind.config.ts'], dir);
     expect(refused.code).toBe(2);
     expect(refused.stderr).toMatch(/still has \d+ candidates/);
 
@@ -185,13 +185,13 @@ describe('cli --fix-map round trip', () => {
     writeFileSync(path.join(dir, 'fixes.json'), JSON.stringify(decided));
     const before = readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8');
 
-    const dry = run(['--fix-map', 'fixes.json', '--config', 'tailwind.config.ts'], dir);
+    const dry = run(['--fix-map', 'fixes.json', '--no-color', '--config', 'tailwind.config.ts'], dir);
     expect(dry.code).toBe(0);
     expect(dry.stdout).toContain('dry run');
     expect(dry.stdout).toContain('text-sm → text-l');
     expect(readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8')).toBe(before);
 
-    const wet = run(['--fix-map', 'fixes.json', '--write', '--config', 'tailwind.config.ts'], dir);
+    const wet = run(['--fix-map', 'fixes.json', '--write', '--no-color', '--config', 'tailwind.config.ts'], dir);
     expect(wet.code).toBe(0);
     expect(wet.stdout).toContain('fixed');
     const after = readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8');
