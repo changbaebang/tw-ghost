@@ -133,31 +133,24 @@ async function runMany(
   }
   const code = multi.summary.failed > 0 ? 2 : failOn === 'ghost' && multi.summary.ghost > 0 ? 1 : 0;
   if (format === 'github') {
-    // One annotation stream across configs, sharing the cap; the summary goes to stderr.
-    const chunks: string[] = [];
-    let budget = maxAnnotations;
-    let omitted = 0;
+    // One annotation stream across configs under a single cap; the summary goes to stderr.
+    const lines: string[] = [];
     let ghosts = 0;
     let occurrences = 0;
     for (const entry of multi.configs) {
       if (entry.error !== undefined) continue;
-      const gh = formatGithub(entry, { maxAnnotations: budget });
-      if (gh.output)
-        chunks.push(gh.output.replace(/\n?::notice::tw-ghost: \d+ more annotations omitted$/, ''));
-      omitted += gh.omitted;
+      const gh = formatGithub(entry, { maxAnnotations: 0 }); // uncapped per config
+      if (gh.output) lines.push(...gh.output.split('\n'));
       ghosts += entry.ghosts.length;
       occurrences += entry.ghosts.reduce((n, g) => n + g.count, 0);
-      if (budget > 0)
-        budget = Math.max(
-          0,
-          budget - (entry.ghosts.reduce((n, g) => n + g.locations.length, 0) - gh.omitted),
-        );
     }
-    if (omitted > 0) chunks.push(`::notice::tw-ghost: ${omitted} more annotations omitted`);
+    const kept = maxAnnotations > 0 ? lines.slice(0, maxAnnotations) : lines;
+    const omitted = lines.length - kept.length;
+    if (omitted > 0) kept.push(`::notice::tw-ghost: ${omitted} more annotations omitted`);
     process.stderr.write(
       `tw-ghost: ${ghosts} ghost classes, ${occurrences} occurrences across ${multi.summary.configs - multi.summary.failed} configs\n`,
     );
-    return exitAfterWrite(process.stdout, chunks.length > 0 ? `${chunks.join('\n')}\n` : '', code);
+    return exitAfterWrite(process.stdout, kept.length > 0 ? `${kept.join('\n')}\n` : '', code);
   }
   const text =
     format === 'json'
