@@ -5,6 +5,7 @@ import pc from 'picocolors';
 import { analyze } from './analyze.js';
 import { describeEnvironment, type EnvReport, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
+import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
 import { type AnalyzeManyOptions, analyzeMany, resolveConfigPaths } from './multi.js';
 import { formatHuman, formatHumanMany } from './report.js';
 
@@ -26,7 +27,11 @@ Options
                             (hoisted / strict monorepos where the config's folder cannot reach it)
       --env                 print the resolved environment (config, tailwindcss, postcss, globs)
                             and exit — paste this into bug reports; honours --json
-      --json                machine-readable JSON on stdout
+      --format <mode>       human | json | github (default: human)
+                            github = one ::error workflow-command annotation per ghost occurrence
+      --json                alias for --format json
+      --max-annotations <n> github: annotations printed before the rest are summarised in a
+                            ::notice, 0 = all (default: 50)
       --unknown             also list utility-looking classes that produce no CSS anywhere,
                             and classes whose variant chain this config does not know
       --max-locations <n>   locations printed per class, 0 = all (default: 3)
@@ -48,6 +53,7 @@ Examples
   npx tw-ghost "src/**/*.tsx" --config apps/web/tailwind.config.ts
   npx tw-ghost --json --unknown --ignore "^legacy-"
   npx tw-ghost --all-configs --json     # monorepo: every config, one JSON document
+  npx tw-ghost --format github          # in a GitHub Actions step
 `;
 
 /**
@@ -104,9 +110,14 @@ function envMany(configPaths: string[], tailwind: string | undefined, json: bool
 /** Several configs: analyze each independently, print per-config blocks or one JSON document. */
 async function runMany(
   configPaths: string[],
-  options: AnalyzeManyOptions & { json: boolean; color: boolean; failOn: 'ghost' | 'none' },
+  options: AnalyzeManyOptions & {
+    format: 'human' | 'json' | 'github';
+    maxAnnotations: number;
+    color: boolean;
+    failOn: 'ghost' | 'none';
+  },
 ): Promise<never> {
-  const { json, color, failOn, ...analyzeOptions } = options;
+  const { format, maxAnnotations, color, failOn, ...analyzeOptions } = options;
   const multi = await analyzeMany(configPaths, analyzeOptions);
   for (const entry of multi.configs) {
     if (entry.error !== undefined) continue;
@@ -120,10 +131,38 @@ async function runMany(
       `${pc.red('tw-ghost:')} ${failed.length} of ${multi.summary.configs} configs failed: ${failed.map((e) => e.config).join(', ')}\n`,
     );
   }
-  const text = json
-    ? `${JSON.stringify({ version, ...multi }, null, 2)}\n`
-    : `${formatHumanMany(multi, { color })}\n`;
   const code = multi.summary.failed > 0 ? 2 : failOn === 'ghost' && multi.summary.ghost > 0 ? 1 : 0;
+  if (format === 'github') {
+    // One annotation stream across configs, sharing the cap; the summary goes to stderr.
+    const chunks: string[] = [];
+    let budget = maxAnnotations;
+    let omitted = 0;
+    let ghosts = 0;
+    let occurrences = 0;
+    for (const entry of multi.configs) {
+      if (entry.error !== undefined) continue;
+      const gh = formatGithub(entry, { maxAnnotations: budget });
+      if (gh.output)
+        chunks.push(gh.output.replace(/\n?::notice::tw-ghost: \d+ more annotations omitted$/, ''));
+      omitted += gh.omitted;
+      ghosts += entry.ghosts.length;
+      occurrences += entry.ghosts.reduce((n, g) => n + g.count, 0);
+      if (budget > 0)
+        budget = Math.max(
+          0,
+          budget - (entry.ghosts.reduce((n, g) => n + g.locations.length, 0) - gh.omitted),
+        );
+    }
+    if (omitted > 0) chunks.push(`::notice::tw-ghost: ${omitted} more annotations omitted`);
+    process.stderr.write(
+      `tw-ghost: ${ghosts} ghost classes, ${occurrences} occurrences across ${multi.summary.configs - multi.summary.failed} configs\n`,
+    );
+    return exitAfterWrite(process.stdout, chunks.length > 0 ? `${chunks.join('\n')}\n` : '', code);
+  }
+  const text =
+    format === 'json'
+      ? `${JSON.stringify({ version, ...multi }, null, 2)}\n`
+      : `${formatHumanMany(multi, { color })}\n`;
   return exitAfterWrite(process.stdout, text, code);
 }
 
@@ -133,7 +172,9 @@ async function main(): Promise<never> {
     'all-configs': { type: 'boolean', default: false },
     tailwind: { type: 'string' },
     env: { type: 'boolean', default: false },
+    format: { type: 'string' },
     json: { type: 'boolean', default: false },
+    'max-annotations': { type: 'string', default: String(DEFAULT_MAX_ANNOTATIONS) },
     unknown: { type: 'boolean', default: false },
     'max-locations': { type: 'string', default: '3' },
     ignore: { type: 'string', multiple: true, default: [] as string[] },
@@ -154,6 +195,22 @@ async function main(): Promise<never> {
 
   if (values.help) return exitAfterWrite(process.stdout, HELP, 0);
   if (values.version) return exitAfterWrite(process.stdout, `${version}\n`, 0);
+  const format = values.format ?? (values.json ? 'json' : 'human');
+  if (format !== 'human' && format !== 'json' && format !== 'github') {
+    return fail(`--format must be "human", "json" or "github" (got ${JSON.stringify(format)})`);
+  }
+  if (values.json && format !== 'json') {
+    return fail(
+      `--json is an alias for --format json; it cannot be combined with --format ${format}`,
+    );
+  }
+  const maxAnnotationsRaw = values['max-annotations'] ?? String(DEFAULT_MAX_ANNOTATIONS);
+  if (!/^\d+$/.test(maxAnnotationsRaw)) {
+    return fail(
+      `--max-annotations must be a non-negative integer (got ${JSON.stringify(maxAnnotationsRaw)})`,
+    );
+  }
+  const maxAnnotations = Number.parseInt(maxAnnotationsRaw, 10);
   // --config is repeatable and may be a glob; --all-configs discovers every config under cwd.
   // An empty list means "auto-detect by walking up from cwd", exactly as before.
   const configPaths = await resolveConfigPaths({
@@ -163,11 +220,12 @@ async function main(): Promise<never> {
   const singleConfig = configPaths.length <= 1 ? configPaths[0] : undefined;
 
   if (values.env) {
-    if (configPaths.length > 1) return envMany(configPaths, values.tailwind, values.json);
+    if (configPaths.length > 1) return envMany(configPaths, values.tailwind, format === 'json');
     const env = describeEnvironment({ config: singleConfig, tailwind: values.tailwind });
-    const text = values.json
-      ? `${JSON.stringify({ version, ...env }, null, 2)}\n`
-      : `${formatEnv(env, version)}\n`;
+    const text =
+      format === 'json'
+        ? `${JSON.stringify({ version, ...env }, null, 2)}\n`
+        : `${formatEnv(env, version)}\n`;
     return exitAfterWrite(process.stdout, text, 0);
   }
   const maxLocationsRaw = values['max-locations'] ?? '3';
@@ -188,10 +246,11 @@ async function main(): Promise<never> {
       allowEmpty: values['allow-empty'],
       ignore: values.ignore,
       unknown: values.unknown,
-      maxLocations,
+      maxLocations: format === 'github' ? 0 : maxLocations,
       suggestions: !values['no-suggestions'],
       tailwind: values.tailwind,
-      json: values.json,
+      format,
+      maxAnnotations,
       color: !values['no-color'],
       failOn,
     });
@@ -203,7 +262,8 @@ async function main(): Promise<never> {
     allowEmpty: values['allow-empty'],
     ignore: values.ignore,
     unknown: values.unknown,
-    maxLocations,
+    // github annotates every occurrence, so it needs the unclipped location list (0 = all)
+    maxLocations: format === 'github' ? 0 : maxLocations,
     suggestions: !values['no-suggestions'],
     tailwind: values.tailwind,
   });
@@ -211,9 +271,16 @@ async function main(): Promise<never> {
     process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
   }
 
-  const output = values.json
-    ? `${JSON.stringify({ version, ...report }, null, 2)}\n`
-    : `${formatHuman(report, { color: !values['no-color'] })}\n`;
+  let output: string;
+  if (format === 'json') {
+    output = `${JSON.stringify({ version, ...report }, null, 2)}\n`;
+  } else if (format === 'github') {
+    const gh = formatGithub(report, { maxAnnotations });
+    process.stderr.write(`${gh.summary}\n`);
+    output = gh.output === '' ? '' : `${gh.output}\n`;
+  } else {
+    output = `${formatHuman(report, { color: !values['no-color'] })}\n`;
+  }
   return exitAfterWrite(
     process.stdout,
     output,

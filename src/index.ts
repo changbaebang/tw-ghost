@@ -22,6 +22,12 @@ export {
 export { describeEnvironment, describeProject, type EnvReport, formatEnv } from './env.js';
 export { TwGhostConfigError } from './errors.js';
 export { isWholeToken, type Location, scanContent } from './extract.js';
+export {
+  DEFAULT_MAX_ANNOTATIONS,
+  formatGithub,
+  type GithubFormatOptions,
+  type GithubFormatResult,
+} from './format-github.js';
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
   ALL_CONFIGS_IGNORE_DIRS,

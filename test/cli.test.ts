@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { CLI, fixture } from './helpers.js';
 
 function run(args: string[], cwd: string) {
-  const res = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8' });
+  // Strip the real Actions environment so `--format github` output is cwd-relative here;
+  // the GITHUB_WORKSPACE behaviour has its own test that sets it explicitly.
+  const { GITHUB_WORKSPACE: _drop, ...env } = process.env;
+  const res = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8', env });
   return { code: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
@@ -139,6 +142,64 @@ describe('cli (dist/cli.js)', () => {
     expect(allowed.code).toBe(0);
     expect(allowed.stderr).toBe('');
     expect(JSON.parse(allowed.stdout)).toMatchObject({ filesScanned: 0, ghosts: [] });
+  });
+
+  it('--format github prints one ::error per occurrence, all locations, summary on stderr', () => {
+    const { code, stdout, stderr } = run(
+      ['--format', 'github', '--max-locations', '1'],
+      fixture('replaced-scale'),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe('tw-ghost: 5 ghost classes, 8 occurrences\n');
+    const lines = stdout.split('\n');
+    expect(lines.slice(0, 4)).toEqual([
+      '::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/App.tsx,line=8,col=88,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/App.tsx,line=11,col=57,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/index.html,line=2,col=13,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+    ]);
+    expect(lines).toContain(
+      '::error file=src/App.tsx,line=7,col=44,title=tw-ghost::z-10 produces no CSS in this Tailwind config — try: z-base, z-modal, z-nav',
+    );
+    expect(lines.filter((l) => l.startsWith('::error '))).toHaveLength(8);
+    expect(lines.at(-1)).toBe('');
+    expect(stdout).not.toContain('::warning');
+    expect(stdout).not.toContain('::notice');
+  });
+
+  it('--format github honours --max-annotations, --unknown and GITHUB_WORKSPACE', () => {
+    const capped = run(['--format', 'github', '--max-annotations', '3'], fixture('replaced-scale'));
+    const lines = capped.stdout.trimEnd().split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines.at(-1)).toBe('::notice::tw-ghost: 5 more annotations omitted');
+
+    const unknown = run(['--format', 'github', '--unknown'], fixture('replaced-scale'));
+    expect(unknown.stdout).toContain(
+      '::warning file=src/App.tsx,line=8,col=77,title=tw-ghost (unknown)::text-smm ',
+    );
+
+    const res = spawnSync(process.execPath, [CLI, '--format', 'github'], {
+      cwd: fixture('replaced-scale'),
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_WORKSPACE: fixture('') },
+    });
+    expect(res.stdout).toContain('::error file=replaced-scale/src/App.tsx,line=7,col=21,');
+
+    const clean = run(['--format', 'github'], fixture('clean'));
+    expect(clean.code).toBe(0);
+    expect(clean.stdout).toBe('');
+    expect(clean.stderr).toBe('tw-ghost: 0 ghost classes, 0 occurrences\n');
+  });
+
+  it('--json is an alias for --format json; bad --format / --max-annotations exit 2', () => {
+    const a = run(['--json'], fixture('replaced-scale'));
+    const b = run(['--format', 'json'], fixture('replaced-scale'));
+    const strip = (s: string) => s.replace(/"durationMs": \d+/, '');
+    expect(strip(a.stdout)).toBe(strip(b.stdout));
+    expect(run(['--format', 'xml'], fixture('clean')).code).toBe(2);
+    expect(run(['--json', '--format', 'github'], fixture('clean')).code).toBe(2);
+    expect(run(['--format', 'github', '--max-annotations', '-1'], fixture('clean')).code).toBe(2);
+    expect(run(['--format', 'github', '--max-annotations', '0'], fixture('clean')).code).toBe(0);
   });
 
   it('supports --help and --version with exit 0', () => {
@@ -343,5 +404,30 @@ describe('cli: several configs', () => {
       config: '../broken-config/tailwind.config.js',
       error: expect.stringContaining('boom'),
     });
+  });
+});
+
+describe('cli: several configs with --format github', () => {
+  it('streams annotations from every config under one cap and summarizes on stderr', () => {
+    const res = run(
+      ['--all-configs', '--format', 'github', '--no-suggestions'],
+      fixture('monorepo'),
+    );
+    expect(res.code).toBe(1);
+    const lines = res.stdout.trim().split('\n');
+    expect(lines.every((l) => l.startsWith('::error ') || l.startsWith('::notice::'))).toBe(true);
+    expect(lines.filter((l) => l.startsWith('::error ')).length).toBeGreaterThan(1);
+    expect(res.stderr).toMatch(/tw-ghost: \d+ ghost classes, \d+ occurrences across 2 configs/);
+    const capped = run(
+      ['--all-configs', '--format', 'github', '--max-annotations', '1', '--no-suggestions'],
+      fixture('monorepo'),
+    );
+    expect(
+      capped.stdout
+        .trim()
+        .split('\n')
+        .filter((l) => l.startsWith('::error ')).length,
+    ).toBe(1);
+    expect(capped.stdout).toMatch(/::notice::tw-ghost: \d+ more annotations omitted/);
   });
 });
