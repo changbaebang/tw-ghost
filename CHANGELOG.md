@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--format <human|json|github>` (default `human`). `--json` stays as an alias for `--format json`.
+  `github` prints one `::error file=…,line=…,col=…,title=tw-ghost::<class> produces no CSS in this
+  Tailwind config — try: …` workflow-command annotation per ghost **occurrence** (every location,
+  `--max-locations` is ignored), `file=` relative to `GITHUB_WORKSPACE` when set, `%` / CR / LF
+  (and `,` / `:` in properties) escaped per the spec, `--unknown` findings as `::warning` with
+  title `tw-ghost (unknown)`, and a `tw-ghost: N ghost classes, M occurrences` summary on stderr.
+  Exit codes unchanged.
+- `--max-annotations <n>` (default `50`, `0` = all): caps the `github` output and ends it with
+  `::notice::tw-ghost: K more annotations omitted` — GitHub shows only 10 annotations per level per
+  step / 50 per job.
+- Programmatic API: `formatGithub()`, `DEFAULT_MAX_ANNOTATIONS`, `GithubFormatOptions`,
+  `GithubFormatResult`.
+- README: **CI** subsection with a minimal workflow step, in English and Korean.
+
 ## [0.2.0] - 2026-09-17
 
 ### Added

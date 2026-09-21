@@ -140,6 +140,64 @@ describe('cli (dist/cli.js)', () => {
     expect(JSON.parse(allowed.stdout)).toMatchObject({ filesScanned: 0, ghosts: [] });
   });
 
+  it('--format github prints one ::error per occurrence, all locations, summary on stderr', () => {
+    const { code, stdout, stderr } = run(
+      ['--format', 'github', '--max-locations', '1'],
+      fixture('replaced-scale'),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe('tw-ghost: 5 ghost classes, 8 occurrences\n');
+    const lines = stdout.split('\n');
+    expect(lines.slice(0, 4)).toEqual([
+      '::error file=src/App.tsx,line=7,col=21,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/App.tsx,line=8,col=88,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/App.tsx,line=11,col=57,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+      '::error file=src/index.html,line=2,col=13,title=tw-ghost::text-sm produces no CSS in this Tailwind config — try: text-l, text-m, text-s, text-xs',
+    ]);
+    expect(lines).toContain(
+      '::error file=src/App.tsx,line=7,col=44,title=tw-ghost::z-10 produces no CSS in this Tailwind config — try: z-base, z-modal, z-nav',
+    );
+    expect(lines.filter((l) => l.startsWith('::error '))).toHaveLength(8);
+    expect(lines.at(-1)).toBe('');
+    expect(stdout).not.toContain('::warning');
+    expect(stdout).not.toContain('::notice');
+  });
+
+  it('--format github honours --max-annotations, --unknown and GITHUB_WORKSPACE', () => {
+    const capped = run(['--format', 'github', '--max-annotations', '3'], fixture('replaced-scale'));
+    const lines = capped.stdout.trimEnd().split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines.at(-1)).toBe('::notice::tw-ghost: 5 more annotations omitted');
+
+    const unknown = run(['--format', 'github', '--unknown'], fixture('replaced-scale'));
+    expect(unknown.stdout).toContain(
+      '::warning file=src/App.tsx,line=8,col=77,title=tw-ghost (unknown)::text-smm ',
+    );
+
+    const res = spawnSync(process.execPath, [CLI, '--format', 'github'], {
+      cwd: fixture('replaced-scale'),
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_WORKSPACE: fixture('') },
+    });
+    expect(res.stdout).toContain('::error file=replaced-scale/src/App.tsx,line=7,col=21,');
+
+    const clean = run(['--format', 'github'], fixture('clean'));
+    expect(clean.code).toBe(0);
+    expect(clean.stdout).toBe('');
+    expect(clean.stderr).toBe('tw-ghost: 0 ghost classes, 0 occurrences\n');
+  });
+
+  it('--json is an alias for --format json; bad --format / --max-annotations exit 2', () => {
+    const a = run(['--json'], fixture('replaced-scale'));
+    const b = run(['--format', 'json'], fixture('replaced-scale'));
+    const strip = (s: string) => s.replace(/"durationMs": \d+/, '');
+    expect(strip(a.stdout)).toBe(strip(b.stdout));
+    expect(run(['--format', 'xml'], fixture('clean')).code).toBe(2);
+    expect(run(['--json', '--format', 'github'], fixture('clean')).code).toBe(2);
+    expect(run(['--format', 'github', '--max-annotations', '-1'], fixture('clean')).code).toBe(2);
+    expect(run(['--format', 'github', '--max-annotations', '0'], fixture('clean')).code).toBe(0);
+  });
+
   it('supports --help and --version with exit 0', () => {
     const help = run(['--help'], fixture('clean'));
     expect(help.code).toBe(0);
