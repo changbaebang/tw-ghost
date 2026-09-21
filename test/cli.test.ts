@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { CLI, fixture } from './helpers.js';
 
 function run(args: string[], cwd: string) {
-  const res = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8' });
+  // Strip the real Actions environment so `--format github` output is cwd-relative here;
+  // the GITHUB_WORKSPACE behaviour has its own test that sets it explicitly.
+  const { GITHUB_WORKSPACE: _drop, ...env } = process.env;
+  const res = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8', env });
   return { code: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
