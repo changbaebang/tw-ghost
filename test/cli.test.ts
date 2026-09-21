@@ -30,6 +30,7 @@ describe('cli (dist/cli.js)', () => {
       'configPath',
       'tailwindVersion',
       'extractor',
+      'separator',
       'warnings',
       'filesScanned',
       'candidateCount',
@@ -237,6 +238,7 @@ describe('cli: several configs', () => {
       'configPath',
       'tailwindVersion',
       'extractor',
+      'separator',
       'warnings',
       'filesScanned',
       'candidateCount',
@@ -271,6 +273,7 @@ describe('cli: several configs', () => {
       'configPath',
       'tailwindVersion',
       'extractor',
+      'separator',
       'warnings',
       'filesScanned',
       'candidateCount',
@@ -429,5 +432,92 @@ describe('cli: several configs with --format github', () => {
         .filter((l) => l.startsWith('::error ')).length,
     ).toBe(1);
     expect(capped.stdout).toMatch(/::notice::tw-ghost: \d+ more annotations omitted/);
+  });
+});
+
+describe('cli --fix-map round trip', () => {
+  it('drafts a map, refuses the draft, applies a decided map (dry run then --write)', async () => {
+    const { cpSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync } = await import(
+      'node:fs'
+    );
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'twg-cli-fix-'));
+    cpSync(fixture('replaced-scale'), dir, { recursive: true });
+    // the copied config must still resolve tailwindcss: link the repo's node_modules next to it
+    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'dir');
+
+    const draft = run(['--fix-map-init', 'fixes.json', '--config', 'tailwind.config.ts'], dir);
+    expect(draft.code).toBe(0);
+    expect(draft.stderr).toMatch(/wrote .*fixes\.json: \d+ ghost classes/);
+    const drafted = JSON.parse(readFileSync(path.join(dir, 'fixes.json'), 'utf8'));
+    expect(Object.keys(drafted)).toContain('text-sm');
+    expect(Object.keys(drafted).every((k) => !k.includes(':'))).toBe(true);
+
+    const again = run(['--fix-map-init', 'fixes.json', '--config', 'tailwind.config.ts'], dir);
+    expect(again.code).toBe(2);
+    expect(again.stderr).toContain('already exists');
+
+    const refused = run(
+      ['--fix-map', 'fixes.json', '--no-color', '--config', 'tailwind.config.ts'],
+      dir,
+    );
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toMatch(/still has \d+ candidates/);
+
+    const decided: Record<string, string | null> = {};
+    for (const key of Object.keys(drafted)) decided[key] = null;
+    decided['text-sm'] = 'text-l';
+    writeFileSync(path.join(dir, 'fixes.json'), JSON.stringify(decided));
+    const before = readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8');
+
+    const dry = run(
+      ['--fix-map', 'fixes.json', '--no-color', '--config', 'tailwind.config.ts'],
+      dir,
+    );
+    expect(dry.code).toBe(0);
+    expect(dry.stdout).toContain('dry run');
+    expect(dry.stdout).toContain('text-sm → text-l');
+    expect(readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8')).toBe(before);
+
+    const wet = run(
+      ['--fix-map', 'fixes.json', '--write', '--no-color', '--config', 'tailwind.config.ts'],
+      dir,
+    );
+    expect(wet.code).toBe(0);
+    expect(wet.stdout).toContain('fixed');
+    const after = readFileSync(path.join(dir, 'src', 'App.tsx'), 'utf8');
+    expect(after).not.toBe(before);
+    expect(after).toContain('text-l');
+    expect(after).not.toMatch(/(^|[^-\w])text-sm($|[^-\w/])/);
+
+    const rescan = run(['--json', '--config', 'tailwind.config.ts'], dir);
+    expect(rescan.code).toBe(0);
+    expect(JSON.parse(rescan.stdout).summary.ghost).toBe(0);
+  });
+
+  it('exits 1 when the map leaves ghosts unmapped, 0 with --fail-on none, and reports them', async () => {
+    const { cpSync, mkdtempSync, writeFileSync, symlinkSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'twg-cli-fix2-'));
+    cpSync(fixture('replaced-scale'), dir, { recursive: true });
+    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'dir');
+    writeFileSync(path.join(dir, 'fixes.json'), JSON.stringify({ 'text-sm': 'text-l' }));
+    const partial = run(
+      ['--fix-map', 'fixes.json', '--json', '--config', 'tailwind.config.ts'],
+      dir,
+    );
+    expect(partial.code).toBe(1);
+    const json = JSON.parse(partial.stdout);
+    expect(json.fix.write).toBe(false);
+    expect(json.fix.unmapped.length).toBeGreaterThan(0);
+    expect(json.fix.edits.length).toBeGreaterThan(0);
+    const lenient = run(
+      ['--fix-map', 'fixes.json', '--fail-on', 'none', '--config', 'tailwind.config.ts'],
+      dir,
+    );
+    expect(lenient.code).toBe(0);
+    expect(lenient.stdout).toContain('unmapped');
   });
 });

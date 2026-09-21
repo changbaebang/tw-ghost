@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type ParseArgsConfig, parseArgs } from 'node:util';
@@ -5,6 +7,7 @@ import pc from 'picocolors';
 import { analyze } from './analyze.js';
 import { describeEnvironment, type EnvReport, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
+import { applyFixMap, draftFixMap, formatFix, parseFixMap } from './fix.js';
 import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
 import { type AnalyzeManyOptions, analyzeMany, resolveConfigPaths } from './multi.js';
 import { formatHuman, formatHumanMany } from './report.js';
@@ -39,6 +42,12 @@ Options
       --allow-empty         exit 0 instead of 2 when no files match / nothing to scan
       --fail-on <mode>      ghost | none — what makes the exit code 1 (default: ghost)
       --no-suggestions      skip the "try:" replacement search (faster)
+      --fix-map-init <file> write a fix-map draft for the current ghosts (one key per bare
+                            utility; a single suggestion, a candidate list, or null) and exit 0
+      --fix-map <file>      apply a fix map: replace / remove each ghost occurrence, carrying
+                            variants, "!" and "-" over. Dry run unless --write. Exit 1 when
+                            ghosts remain unmapped (unless --fail-on none)
+      --write               with --fix-map: write the changed files
       --no-color            disable colors
   -h, --help                show this help
   -v, --version             print version
@@ -174,6 +183,9 @@ async function main(): Promise<never> {
     'allow-empty': { type: 'boolean', default: false },
     'fail-on': { type: 'string', default: 'ghost' },
     'no-suggestions': { type: 'boolean', default: false },
+    'fix-map': { type: 'string' },
+    'fix-map-init': { type: 'string' },
+    write: { type: 'boolean', default: false },
     'no-color': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
     version: { type: 'boolean', short: 'v', default: false },
@@ -262,6 +274,51 @@ async function main(): Promise<never> {
   });
   for (const warning of report.warnings) {
     process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
+  }
+
+  if (values['fix-map-init'] !== undefined) {
+    const target = path.resolve(values['fix-map-init']);
+    if (existsSync(target)) {
+      return fail(`--fix-map-init: ${target} already exists; delete it or choose another path`);
+    }
+    const draft = draftFixMap(report.ghosts, report.separator);
+    await writeFile(target, `${JSON.stringify(draft, null, 2)}\n`, 'utf8');
+    const entries = Object.values(draft);
+    const multi = entries.filter((v) => Array.isArray(v)).length;
+    const none = entries.filter((v) => v === null).length;
+    process.stderr.write(
+      `${pc.cyan('tw-ghost:')} wrote ${target}: ${entries.length} ghost classes (${multi} with several candidates to pick from, ${none} with none: null removes the class, or set a replacement).\n`,
+    );
+    return exitAfterWrite(process.stdout, '', 0);
+  }
+
+  if (values['fix-map'] !== undefined) {
+    const mapPath = path.resolve(values['fix-map']);
+    let mapText: string;
+    try {
+      mapText = await readFile(mapPath, 'utf8');
+    } catch {
+      return fail(`--fix-map: cannot read ${mapPath}`);
+    }
+    const map = parseFixMap(mapText, mapPath);
+    const occurrences = new Map<string, ReadonlySet<string>>();
+    for (const ghost of report.ghosts) occurrences.set(ghost.class, new Set(ghost.files));
+    const result = await applyFixMap({
+      occurrences,
+      map,
+      separator: report.separator,
+      write: values.write,
+    });
+    const code = result.unmapped.length > 0 && failOn === 'ghost' ? 1 : 0;
+    if (format === 'json') {
+      const payload = { version, fix: { write: values.write, ...result } };
+      return exitAfterWrite(process.stdout, `${JSON.stringify(payload, null, 2)}\n`, code);
+    }
+    return exitAfterWrite(
+      process.stdout,
+      formatFix(result, { write: values.write, color: !values['no-color'] }),
+      code,
+    );
   }
 
   let output: string;

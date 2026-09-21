@@ -41,6 +41,12 @@ All notable changes to this project are documented here. The format follows
   unchanged.
 - Fixtures `monorepo` (two apps replacing different scales plus a shared package both scan) and
   `broken-config` (a config that throws); `test/multi.test.ts`.
+- `--fix-map-init <file>` writes a fix-map draft from the current ghosts (bare utility → single suggestion,
+  candidate list, or `null`); `--fix-map <file>` applies a decided map — replacing or removing every
+  occurrence, carrying variants / `!` / `-` over, whole-token only, dry run by default, `--write` to apply.
+  Exit 1 while any ghost remains unmapped. JSON: `{ "fix": { write, edits, files, unused, unmapped } }`.
+- Report: `separator` (top level) and `files` per ghost (all files the class occurs in, never clipped).
+- Programmatic: `applyFixMap`, `applyFixMapToText`, `draftFixMap`, `parseFixMap`, `replacementFor`, `formatFix`.
 
 ## [0.2.0] - 2026-09-17
 

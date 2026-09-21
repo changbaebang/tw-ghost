@@ -23,11 +23,25 @@ export { describeEnvironment, describeProject, type EnvReport, formatEnv } from 
 export { TwGhostConfigError } from './errors.js';
 export { isWholeToken, type Location, scanContent } from './extract.js';
 export {
+  type ApplyFixMapOptions,
+  applyFixMap,
+  applyFixMapToText,
+  draftFixMap,
+  type FixEdit,
+  type FixMap,
+  type FixMapDraft,
+  type FixResult,
+  formatFix,
+  parseFixMap,
+  replacementFor,
+} from './fix.js';
+export {
   DEFAULT_MAX_ANNOTATIONS,
   formatGithub,
   type GithubFormatOptions,
   type GithubFormatResult,
 } from './format-github.js';
+
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
   ALL_CONFIGS_IGNORE_DIRS,

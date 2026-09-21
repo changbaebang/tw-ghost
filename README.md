@@ -275,6 +275,9 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | `--allow-empty` | off | Exit `0` with an empty report when no file matches / nothing is configured to scan. Without it that is exit `2`, so a mistyped glob cannot silently pass CI. |
 | `--fail-on <ghost\|none>` | `ghost` | What turns the exit code into `1`. |
 | `--no-suggestions` | off | Skip the replacement search (faster on huge themes). |
+| `--fix-map-init <file>` | – | Write a **fix-map draft** for the current ghosts and exit 0: one key per bare utility (variants stripped), value = the single suggestion, a list of candidates, or `null`. Refuses to overwrite an existing file. |
+| `--fix-map <file>` | – | Apply a fix map (see *Fixing ghosts*): replace or remove every occurrence of each mapped ghost, carrying variants, `!` and `-` over. **Dry run** unless `--write`. Exit 1 when ghosts remain unmapped (`--fail-on none` → 0). |
+| `--write` | off | With `--fix-map`: write the changed files. |
 | `--no-color` | off | Disable ANSI colors (`NO_COLOR` is respected too). |
 | `-h, --help` / `-v, --version` | | |
 
@@ -401,6 +404,55 @@ one), the output stays the single-config document above, byte for byte.
 }
 ```
 
+## Fixing ghosts
+
+tw-ghost does not guess replacements on its own: `text-sm` may mean `text-l` in one design system and
+`text-m` in another, and that is a design decision, not a string match. Instead it turns the decision
+into a small JSON file your team makes once and reuses across apps.
+
+```sh
+# 1. draft a map from the current ghosts
+npx tw-ghost --fix-map-init fixes.json
+```
+
+```jsonc
+// fixes.json (draft): keys are bare utilities — variants, "!" and "-" are handled for you
+{
+  "rounded":  ["rounded-0", "rounded-2", "rounded-4", "rounded-8"],   // several candidates: pick one
+  "text-sm":  ["text-l", "text-m", "text-s"],
+  "z-10":     "z-content-1",                                          // exactly one suggestion
+  "min-w-px": null                                                    // no candidate: null = remove
+}
+```
+
+Reduce every array to one string (or `null` to delete the class), then:
+
+```sh
+# 2. see what would change (nothing is written)
+npx tw-ghost --fix-map fixes.json
+
+# 3. apply
+npx tw-ghost --fix-map fixes.json --write
+```
+
+Rules the fixer follows:
+
+- **Whole tokens only.** `text-sm` is never touched inside `md:text-sm` (that one is handled through its own
+  bare utility), `legacy-text-sm` or `text-sm/50`; `p-3` is never touched inside `p-30`, `p-3.5`, `!p-3`.
+- **Variants, `!` and `-` are carried over.** `{ "mt-3": "mt-4" }` turns `lg:!-mt-3` into `lg:!-mt-4`.
+  A custom `separator` is honoured.
+- **Removal eats one space.** `class="a z-10 b"` → `class="a b"`; a class that was alone becomes `""` —
+  review those in the dry run.
+- **Nothing is inferred.** A ghost that is not in the map stays a ghost: the run still exits 1 and lists it
+  under *unmapped*. Map entries that match nothing are listed under *unused*.
+- **Only files that contain a mapped ghost are opened**, and only lines with a match are rewritten; line
+  endings (LF / CRLF) are preserved.
+- The fixer edits **text**, not a syntax tree. It is safe for class strings, template literals and
+  `clsx`/`cva` calls, and it will also rewrite a matching token in a comment or a string that is not a
+  class list — the dry run shows every edit with `file:line:col`, so read it before `--write`.
+
+`--json` with `--fix-map` prints `{ "fix": { "write", "edits", "files", "unused", "unmapped" } }`.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -408,6 +460,9 @@ one), the output stays the single-config document above, byte for byte.
 | `0` | No ghosts (or `--fail-on none`), or an empty scan with `--allow-empty`. |
 | `1` | At least one ghost class found. |
 | `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). With several configs: a `--config` glob or `--all-configs` that matches nothing, or **any** config failing (the others are still reported). Full list with messages under *How it fails*. |
+
+| `1` | At least one ghost class found; with `--fix-map`, at least one ghost left unmapped. |
+| `2` | Usage or configuration error: bad flag or value (e.g. non-integer `--max-locations`), no config found, config failed to load or exported a function, `tailwindcss` not resolvable, unsupported Tailwind version (4.x, ≤ 2.x, 3.0–3.2), **no file matched the globs / nothing to scan** (unless `--allow-empty`). Full list with messages under *How it fails*. |
 
 ## Programmatic API
 
@@ -597,8 +652,9 @@ project:
 
 ## Roadmap
 
-- `--format github` (workflow annotations) and SARIF output.
+- SARIF output.
 - Per-file `// tw-ghost-ignore` comments.
+- `--fix-map` scoped to a path (fix one app of a monorepo with a shared map).
 - Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
   include them).
 - Cache candidate extraction between runs for very large monorepos.

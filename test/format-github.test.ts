@@ -14,6 +14,7 @@ const ghost = (cls: string, locs: Array<[string, number, number]>, suggestions: 
     class: cls,
     count: locs.length,
     locations: locs.map(([file, line, col]) => ({ file, line, col })),
+    files: Array.from(new Set(locs.map(([file]) => file))).sort(),
     stockCss: [],
     suggestions,
   }) satisfies GhostFinding;
@@ -22,6 +23,7 @@ const report = (partial: Partial<Report>): Report => ({
   configPath: '/repo/tailwind.config.js',
   tailwindVersion: '3.4.0',
   extractor: 'project',
+  separator: ':',
   warnings: [],
   filesScanned: 1,
   candidateCount: 1,
