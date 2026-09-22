@@ -65,11 +65,10 @@ export default {
 
 **하지 않는 일**
 
-- ESLint 규칙을 대체하지 않는다. [eslint-plugin-tailwindcss](https://github.com/francoismassart/eslint-plugin-tailwindcss)
+- 설정 형태로 유효성을 추론하지 않는다. [eslint-plugin-tailwindcss](https://github.com/francoismassart/eslint-plugin-tailwindcss)
   (`no-custom-classname`) 와 [eslint-plugin-better-tailwindcss](https://github.com/schoero/eslint-plugin-better-tailwindcss)
-  (`no-unknown-classes`) 는 타이핑 중에 에디터 피드백을 준다. 두 도구는 ESLint 에 묶여 있고 설정
-  형태로 유효성을 추론한다. tw-ghost 는 린터 독립적이고(Biome / oxlint 팀에서도 동작) 실제 CSS 출력으로
-  판정한다. 가능하다면 둘 다 쓰는 것이 좋다.
+  (`no-unknown-classes`) 는 그렇게 한다. tw-ghost 는 CLI 와 자체 ESLint 규칙(`tw-ghost/no-ghost-class`, *ESLint*
+  참고) 모두 실제 CSS 출력으로 판정한다. CLI 는 Biome / oxlint 팀을 위해 린터 독립적으로 남는다.
 - 런타임에 동적으로 조립되는 클래스(`` `text-${size}` ``)는 찾지 못한다. Tailwind 도 못 보는 클래스라
   이미 프로덕션에서 깨져 있는 것이지, 이 리포트에서만 빠지는 것이 아니다.
 - Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다.
@@ -126,6 +125,53 @@ Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer d
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
 내 환경에 맞는지 확실하지 않다면 `npx tw-ghost --env` 를 실행한다 — 해석한 결과를 출력하거나,
 정확한 이유와 함께 실패한다(종료 코드 2).
+
+### ESLint
+
+같은 판정을 에디터에서, 타이핑하는 동안. tw-ghost 는 ESLint 플러그인을 서브패스로 함께 배포한다 — 추가
+패키지 없음, ESLint 자체에 대한 의존성 없음 (ESLint ≥ 9, flat config):
+
+```js
+// eslint.config.js
+import twGhost from 'tw-ghost/eslint';
+
+export default [
+  // …기존 설정…
+  twGhost.configs.recommended, // `tw-ghost/no-ghost-class` 규칙을 "error" 로
+];
+```
+
+```jsx
+<div className="text-sm p-3" />
+//              ~~~~~~~ `text-sm` produces no CSS in this Tailwind config
+//                      (stock Tailwind would set font-size: 0.875rem; line-height: 1.25rem).
+```
+
+규칙이 보는 것: `className` / `class` 속성 안의 문자열 리터럴과 템플릿 리터럴 텍스트(`cond ? 'a' : 'b'`,
+`cond && 'a'`, 배열, `{ 'a': cond }` 의 키 포함), 그리고 `clsx`, `cx`, `cn`, `classnames`, `cva`, `tv`,
+`twMerge`, `twJoin` 의 인자(`callees` 옵션). 동적인 조각(`` `text-${size}` ``)은 Tailwind 자신이 그러듯
+건너뛴다. 각 클래스는 프로젝트의 `tailwindcss` JIT 엔진으로 동기 판정한다 — 설정은 `tailwind.config.*`
+하나당 한 번 로드하고(린트 대상 파일에서 위로 올라가며 찾거나 `config` 로 지정), mtime 이 바뀌면 다시 로드한다.
+
+옵션 (모두 선택):
+
+| 옵션 | 기본값 | 의미 |
+| --- | --- | --- |
+| `config` | 파일 위의 가장 가까운 `tailwind.config.*` | 설정 파일 경로 (ESLint cwd 기준). |
+| `callees` | `clsx, cx, cn, classnames, classNames, cva, tv, twMerge, twJoin` | 문자열 인자가 클래스인 함수들. |
+| `attributes` | `className, class` | 스캔할 JSX 속성. |
+| `ignore` | `[]` | 정규식; 일치하는 클래스는 건너뛴다. |
+| `reportUnknownVariant` | `false` | `unknown-variant`(이 설정이 모르는 변형 아래의 유효한 유틸리티)도 보고. |
+| `reportUnknown` | `false` | 어디에서도 CSS 를 만들지 않는 유틸리티 모양 클래스(오타)도 보고. 잡음이 많으니 CLI 의 `--unknown` 을 권장. |
+
+설정 문제는 린트 실행을 죽이지 않고 파일당 한 번 린트 메시지로 보고한다(`tw-ghost could not load the
+Tailwind config: …`, `tw-ghost found no tailwind.config.*…`). 발견을 한꺼번에 고치는 길은 CLI 의 `--fix-map`
+이다. 대체 클래스는 디자인 결정이라 규칙에는 autofix 가 없다(*유령 클래스 고치기* 참고).
+
+**`eslint-plugin-tailwindcss` 와의 차이.** 그 플러그인은 설정 객체로 유효성을 추론한다. 이 규칙은 Tailwind
+엔진에 "이 클래스가 내 설정과 기본 Tailwind 에서 *CSS 를 만드는가*"를 묻기 때문에, 교체된 스케일(`sm` 이 없는
+`fontSize`)은 발견이고 커스텀 플러그인 유틸리티는 발견이 아니다. Biome / oxlint 사용자는 CLI 를 그대로 쓴다.
+거기엔 붙을 플러그인 API 가 없다.
 
 ### 모노레포
 

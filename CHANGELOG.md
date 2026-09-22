@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **ESLint plugin** as a subpath, `tw-ghost/eslint` (ESLint ≥ 9 flat config, no ESLint dependency): rule
+  `tw-ghost/no-ghost-class` reports every ghost class in `className` / `class` attributes (literals, template
+  text, ternaries, `&&`, arrays, object keys) and in `clsx`/`cx`/`cn`/`classnames`/`cva`/`tv`/`twMerge`/`twJoin`
+  calls, at the token, with the CSS stock Tailwind would have produced. Options: `config`, `callees`,
+  `attributes`, `ignore`, `reportUnknownVariant`, `reportUnknown`. `configs.recommended` included.
+- **Live classifier** (`createLiveClassifier(configPath)`): synchronous per-candidate verdicts through Tailwind's
+  JIT internals (`createContext` + `generateRules`) — ~20–300 ms to build both contexts, then thousands of classes
+  per millisecond — giving the same `ok` / `ghost` / `unknown-variant` / `unknown` as `analyze()` (verified against
+  every fixture). Also `stockDeclarations(candidate)`.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

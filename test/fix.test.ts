@@ -84,8 +84,10 @@ describe('applyFixMapToText', () => {
   });
 
   it('handles several occurrences on one line, template literals and clsx, and keeps CRLF', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the placeholder is test *input*, not a template
     const src = 'const c = `text-sm ${x} text-sm`;\r\nclsx("text-sm", cond && "z-10")\r\n';
     const { text, edits } = applyFixMapToText('a', src, ['text-sm', 'z-10'], map);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: same
     expect(text).toBe('const c = `text-l ${x} text-l`;\r\nclsx("text-l", cond && "")\r\n');
     expect(edits).toHaveLength(4);
   });

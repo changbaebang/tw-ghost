@@ -43,6 +43,11 @@ export {
 
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
+  type CreateLiveClassifierOptions,
+  createLiveClassifier,
+  type LiveClassifier,
+} from './live.js';
+export {
   ALL_CONFIGS_IGNORE_DIRS,
   type AnalyzeManyOptions,
   analyzeMany,
