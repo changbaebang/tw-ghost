@@ -682,12 +682,9 @@ pnpm pack:check   # npm pack --dry-run — 타르볼 내용 확인
 
 **릴리스:** 배포는 **오직** 태그 → GitHub Actions 흐름으로만 한다. 로컬에서 `npm publish` 를
 실행하지 말 것 — `prepublishOnly` 와 `publishConfig.registry` 는 안전망이지 절차가 아니다.
-`package.json` 과 `CHANGELOG.md` 의 `version` 을 올리고 커밋한 뒤
-
-```sh
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
+`package.json` 과 `CHANGELOG.md` 의 `version` 을 PR 로 올린다. **그 PR 을 `main` 에 병합하는 것이 곧 릴리스다**:
+`Release` 워크플로가 버전 변경을 감지해 `vX.Y.Z` 태그를 직접 만들고 배포한다. 저장소 소유자가 병합했을 때만 그렇게
+하며, 협업자가 버전 범프를 병합하면 기록만 남기고 건너뛴다.
 
 `Release` GitHub Action (`.github/workflows/release.yml`) 이 설치·빌드·테스트 후 npm **trusted publishing**(GitHub OIDC 신원, 토큰 저장 없음)으로 `https://registry.npmjs.org/` 에 `npm publish --provenance --access public` 을 실행한다.
 `v*` 태그는 저장소 ruleset 으로 보호되어 저장소 admin 만 만들 수 있으므로, 협업자의 write 권한으로는

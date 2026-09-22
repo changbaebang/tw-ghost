@@ -712,12 +712,9 @@ build throwaway projects with a fake `node_modules/tailwindcss/package.json` ins
 
 **Release:** publishing happens **only** through the tag → GitHub Actions flow. Never run
 `npm publish` locally — `prepublishOnly` and `publishConfig.registry` are safety nets, not the
-process. Bump `version` in `package.json` and `CHANGELOG.md`, commit, then
-
-```sh
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
+process. Bump `version` in `package.json` and `CHANGELOG.md` in a PR. **Merging that PR to `main` is the release**: the
+`Release` workflow sees the version change, creates the `vX.Y.Z` tag itself and publishes. It only does so when the
+merge was performed by the repository owner; a collaborator's merge of a version bump is logged and skipped.
 
 The `Release` GitHub Action (`.github/workflows/release.yml`) installs, builds, tests and runs
 `npm publish --provenance --access public` against `https://registry.npmjs.org/` with npm **trusted publishing**: the workflow
