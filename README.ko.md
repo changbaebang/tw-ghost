@@ -687,8 +687,8 @@ pnpm pack:check   # npm pack --dry-run — 타르볼 내용 확인
 하며, 협업자가 버전 범프를 병합하면 기록만 남기고 건너뛴다.
 
 `Release` GitHub Action (`.github/workflows/release.yml`) 이 설치·빌드·테스트 후 npm **trusted publishing**(GitHub OIDC 신원, 토큰 저장 없음)으로 `https://registry.npmjs.org/` 에 `npm publish --provenance --access public` 을 실행한다.
-`v*` 태그는 저장소 ruleset 으로 보호되어 저장소 admin 만 만들 수 있으므로, 협업자의 write 권한으로는
-릴리스를 트리거할 수 없다.
+`v*` 태그는 GitHub Actions 만 만들 수 있도록 저장소 ruleset 으로 보호되어, 협업자의 write 권한으로도 손으로
+민 태그로도 릴리스를 트리거할 수 없다.
 
 ## 라이선스
 
