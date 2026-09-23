@@ -27,7 +27,7 @@ jobs:
           node dist/cli.js --format sarif --no-suggestions --fail-on none \
             --config .fp-experiment/tailwind.config.js > tw-ghost.sarif
           node -e "
-            const l = require('./tw-ghost.sarif');
+            const l = JSON.parse(require('node:fs').readFileSync('tw-ghost.sarif', 'utf8'));
             for (const r of l.runs[0].results) {
               const p = r.locations[0].physicalLocation;
               console.log(p.artifactLocation.uri, p.region.startLine, p.region.startColumn,
