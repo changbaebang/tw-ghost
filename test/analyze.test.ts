@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../src/index.js';
 import { fixture } from './helpers.js';
@@ -10,7 +11,9 @@ describe('analyze — replaced-scale fixture', async () => {
   const ghosts = report.ghosts.map((g) => g.class);
 
   it('uses the fixture config, the project extractor, and the project tailwind version', () => {
-    expect(report.configPath.endsWith('replaced-scale/tailwind.config.ts')).toBe(true);
+    expect(report.configPath.endsWith(path.join('replaced-scale', 'tailwind.config.ts'))).toBe(
+      true,
+    );
     expect(report.tailwindVersion).toMatch(/^3\./);
     expect(report.extractor).toBe('project');
     expect(report.filesScanned).toBe(2);
@@ -160,6 +163,14 @@ describe('analyze — options', () => {
     expect(report.filesScanned).toBe(1);
     expect(byClass(report.ghosts, 'text-sm')?.count).toBe(1);
     expect(report.ghosts.map((g) => g.class)).not.toContain('z-10');
+  });
+
+  // On Windows a shell (or a `content` array written there) hands over backslash separators;
+  // picomatch would read those as escapes and match nothing.
+  it.runIf(process.platform === 'win32')('accepts Windows separators in globs', async () => {
+    const report = await analyze({ cwd: fixture('replaced-scale'), globs: ['src\\**\\*.html'] });
+    expect(report.filesScanned).toBe(1);
+    expect(byClass(report.ghosts, 'text-sm')?.count).toBe(1);
   });
 
   it('fails with a config error when no config can be found', async () => {

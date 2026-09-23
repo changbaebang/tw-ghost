@@ -132,8 +132,9 @@ describe('preflight — tailwindcss not resolvable / --tailwind <dir>', () => {
     const report = await analyze({ cwd: dir, tailwind: ROOT });
     expect(report.summary.ghost).toBe(1);
     const project = loadProject(path.join(dir, 'tailwind.config.js'), { tailwindDir: ROOT });
+    // `[\\/]`: tailwindPackageDir is a real OS path, so it uses backslashes on Windows.
     expect(project.tailwindPackageDir).toMatch(
-      /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?tailwindcss$/,
+      /node_modules[\\/](\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?tailwindcss$/,
     );
     expect(project.postcssVersion).toMatch(/^8\./);
   });
@@ -219,9 +220,11 @@ describe('--env', () => {
     expect(stderr).toBe('');
     expect(stdout).toMatch(/^tw-ghost {5}\d+\.\d+\.\d+/m);
     expect(stdout).toMatch(/^node {9}v\d+/m);
-    expect(stdout).toContain(`config       ${fixture('replaced-scale')}/tailwind.config.ts`);
-    expect(stdout).toMatch(/^tailwindcss {2}3\.\d+\.\d+ {2}.*node_modules\/tailwindcss$/m);
-    expect(stdout).toMatch(/^postcss {6}8\.\d+\.\d+ {2}.*node_modules\/postcss$/m);
+    expect(stdout).toContain(
+      `config       ${path.join(fixture('replaced-scale'), 'tailwind.config.ts')}`,
+    );
+    expect(stdout).toMatch(/^tailwindcss {2}3\.\d+\.\d+ {2}.*node_modules[\\/]tailwindcss$/m);
+    expect(stdout).toMatch(/^postcss {6}8\.\d+\.\d+ {2}.*node_modules[\\/]postcss$/m);
     expect(stdout).toContain('extractor    project');
     expect(stdout).toContain('content      1 glob (resolved from');
     expect(stdout).toContain('               ./src/**/*.{ts,tsx,html}');

@@ -7,6 +7,20 @@ import twGhost, { noGhostClass, resetEslintCache } from '../src/eslint.js';
 import { fixture } from './helpers.js';
 
 /**
+ * Where `npx -y eslint@9` leaves its install. npm's cache is `~/.npm` on POSIX but
+ * `%LOCALAPPDATA%\npm-cache` on Windows, so probing only the POSIX path would silently skip
+ * every integration case on a Windows runner.
+ */
+function npxRoots(): string[] {
+  const roots = [path.join(homedir(), '.npm', '_npx')];
+  const localAppData = process.env.LOCALAPPDATA;
+  if (localAppData) roots.push(path.join(localAppData, 'npm-cache', '_npx'));
+  const npmCache = process.env.npm_config_cache;
+  if (npmCache) roots.push(path.join(npmCache, '_npx'));
+  return roots.filter((r) => existsSync(r));
+}
+
+/**
  * ESLint is not a dependency of tw-ghost (the plugin ships as `tw-ghost/eslint` with no ESLint
  * import). Tests run the real `Linter` when ESLint 9 is resolvable — from devDependencies or from
  * the npx cache — and skip the integration cases otherwise.
@@ -14,8 +28,7 @@ import { fixture } from './helpers.js';
 function loadLinter(): (new (opts: { configType: 'flat' }) => LinterLike) | null {
   const req = createRequire(import.meta.url);
   const candidates: string[] = ['eslint'];
-  const npx = path.join(homedir(), '.npm', '_npx');
-  if (existsSync(npx)) {
+  for (const npx of npxRoots()) {
     for (const d of readdirSync(npx)) {
       const p = path.join(npx, d, 'node_modules', 'eslint');
       if (existsSync(path.join(p, 'package.json'))) candidates.push(p);

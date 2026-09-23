@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { Finding, GhostFinding, Report } from './analyze.js';
 import type { Location } from './extract.js';
+import { toPosix } from './paths.js';
 
 /**
  * GitHub Actions workflow-command output (`--format github`): one `::error` annotation per ghost
@@ -48,8 +49,6 @@ export function relativizeFile(file: string, cwd: string, workspace: string | un
   }
   return toPosix(path.relative(cwd, abs));
 }
-
-const toPosix = (p: string): string => p.split(path.sep).join('/');
 
 export function annotation(
   level: 'error' | 'warning' | 'notice',
