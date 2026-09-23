@@ -217,6 +217,10 @@ describe('renderWorkflow', () => {
   it('uploads SARIF for exit 0 and 1 but not for exit 2, and still fails the job on 1', () => {
     const yml = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: true });
 
+    // A multi-line script, so the shell is named rather than inherited: the generated runner is
+    // ubuntu-latest, but swapping it for windows-latest would hand this to PowerShell.
+    expect(yml).toContain('\n        shell: bash\n        run: |\n');
+
     // The scan records its own exit code and then re-raises it, so ghosts (exit 1) still turn the
     // check red. Without `|| code=$?` the default `bash -e` would abort before the output is written.
     const run = yml.match(/^ {8}run: \|\n((?: {10}.*\n)+)/m)?.[1] ?? '';

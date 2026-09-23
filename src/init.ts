@@ -282,6 +282,10 @@ export function renderWorkflow(options: WorkflowOptions): string {
         '      # SARIF goes to a file. Ghosts still fail the job; `code` decides whether the partial',
         '      # log may be uploaded (exit 2 = a config failed to load, so it may not).',
         '      - id: scan',
+        // The runner above is ubuntu-latest, where `run:` is already bash. Say so anyway: this is
+        // now a multi-line script that depends on `$?`, `||` and `$GITHUB_OUTPUT`, and swapping the
+        // runner for windows-latest would otherwise hand it to PowerShell, where none of that works.
+        '        shell: bash',
         '        run: |',
         '          code=0',
         `          ${run} --format sarif${configArg} > tw-ghost.sarif || code=$?`,

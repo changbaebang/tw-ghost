@@ -280,9 +280,10 @@ retire the missing configs' alerts as though their classes had been fixed. The w
 
 ```yaml
 - id: scan
+  shell: bash
   run: |
     code=0
-    npx tw-ghost@VERSION --format sarif > tw-ghost.sarif || code=$?
+    npx tw-ghost@<the version that wrote the workflow> --format sarif > tw-ghost.sarif || code=$?
     echo "code=$code" >> "$GITHUB_OUTPUT"
     exit "$code"
 - if: ${{ !cancelled() && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1') }}
@@ -292,9 +293,12 @@ retire the missing configs' alerts as though their classes had been fixed. The w
     category: tw-ghost
 ```
 
-`|| code=$?` keeps the default `bash -e` from aborting before the code is recorded, and `exit
-"$code"` re-raises it so ghosts still fail the check. The gate lists the codes that may upload, so
-an exit code nobody anticipated does not upload either.
+`|| code=$?` keeps `bash -e` from aborting before the code is recorded, and `exit "$code"` re-raises
+it so ghosts still fail the check. The gate lists the codes that may upload, so an exit code nobody
+anticipated does not upload either — and exit `2` is the only code tw-ghost uses for "could not
+finish", including for an unexpected error, so nothing else has to be enumerated. `shell: bash` is
+explicit because this is a multi-line script: the generated `runs-on` is `ubuntu-latest`, but if you
+swap it for `windows-latest` the default shell would be PowerShell.
 
 A one-line summary
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`) goes to stderr, since
