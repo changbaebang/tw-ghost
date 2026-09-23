@@ -63,9 +63,10 @@ describe('resolveConfigPaths', () => {
 
   it('--all-configs discovers every config under cwd and throws when there is none', async () => {
     const paths = await resolveConfigPaths({ cwd: monorepo, all: true });
+    // path.relative gives OS separators; compare against OS-joined paths, not POSIX literals.
     expect(paths.map((p) => path.relative(monorepo, p))).toEqual([
-      'apps/admin/tailwind.config.js',
-      'apps/web/tailwind.config.ts',
+      path.join('apps', 'admin', 'tailwind.config.js'),
+      path.join('apps', 'web', 'tailwind.config.ts'),
     ]);
     const empty = path.join(fixture('clean'), 'src');
     await expect(resolveConfigPaths({ cwd: empty, all: true })).rejects.toThrow(
