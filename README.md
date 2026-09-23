@@ -92,6 +92,26 @@ npx tw-ghost --json --ignore "^legacy-" --unknown
 npx tw-ghost --all-configs --json
 ```
 
+### Getting started: `tw-ghost init`
+
+```sh
+npx tw-ghost init            # writes the files below
+npx tw-ghost init --dry-run  # prints what it would write, writes nothing
+```
+
+`init` scans once and scaffolds what a project needs to keep tw-ghost running:
+
+| File | When |
+| --- | --- |
+| `.github/workflows/tw-ghost.yml` | always; the install steps and the runner match your package manager (`packageManager`, else the lockfile: pnpm / yarn / npm / bun), and the analysis step uploads SARIF unless you pass `--no-sarif` |
+| `tw-ghost.fixes.json` | only when the scan finds ghosts — the same draft as `--fix-map-init`, ready for *Fixing ghosts* |
+
+It **never overwrites**: a file that exists is reported as `exists` and left alone, so re-running
+after a config change is safe. It installs nothing, commits nothing, and exits `0` even when the
+scan found ghosts — failing the build is the workflow's job, not the scaffolder's. When there is no
+`tailwind.config.*` yet, the workflow is still written and the reason is printed. Flags:
+`--dry-run`, `--no-sarif`, `--no-fix-map`, `--workflow <name>`, `--config <path>`, `--json`.
+
 ### CI
 
 In a GitHub Actions step, `--format github` turns every ghost occurrence into an inline
