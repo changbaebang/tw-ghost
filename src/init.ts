@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -51,6 +52,8 @@ export interface InitOptions {
   sarif?: boolean | undefined;
   /** Workflow file name under `.github/workflows`. Default: `tw-ghost.yml`. */
   workflow?: string | undefined;
+  /** Branch for the generated `push:` filter. Default: the repository's default branch. */
+  branch?: string | undefined;
 }
 
 interface PackageInfo {
@@ -58,6 +61,13 @@ interface PackageInfo {
   manager: 'npm' | 'pnpm' | 'yarn' | 'bun';
   /** Exact `packageManager` string when the project pins one. */
   packageManager?: string;
+  /**
+   * Major version from `packageManager`, when pinned. The name alone is not enough: Yarn 1 has no
+   * `--immutable` and no `dlx`, and Yarn 2+ removed `--frozen-lockfile`.
+   */
+  managerMajor?: number;
+  /** Lockfile at the root, when present. A frozen install needs one — `npm ci` fails without it. */
+  lockfile?: string;
   /** True when tailwindcss is a dependency of the root package. */
   hasTailwind: boolean;
 }
@@ -73,6 +83,7 @@ const LOCKFILES: [string, PackageInfo['manager']][] = [
 export function detectPackageInfo(root: string): PackageInfo {
   let manager: PackageInfo['manager'] = 'npm';
   let packageManager: string | undefined;
+  let managerMajor: number | undefined;
   let hasTailwind = false;
   const pkgPath = path.join(root, 'package.json');
   if (existsSync(pkgPath)) {
@@ -84,8 +95,10 @@ export function detectPackageInfo(root: string): PackageInfo {
       };
       if (typeof pkg.packageManager === 'string') {
         packageManager = pkg.packageManager;
-        const name = pkg.packageManager.split('@')[0];
+        const [name, spec] = pkg.packageManager.split('@');
         if (name === 'pnpm' || name === 'yarn' || name === 'npm' || name === 'bun') manager = name;
+        const major = Number.parseInt(spec ?? '', 10);
+        if (Number.isFinite(major)) managerMajor = major;
       }
       hasTailwind =
         pkg.dependencies?.tailwindcss !== undefined ||
@@ -94,57 +107,106 @@ export function detectPackageInfo(root: string): PackageInfo {
       // A malformed package.json is the project's problem; fall back to defaults.
     }
   }
-  if (packageManager === undefined) {
-    for (const [file, name] of LOCKFILES) {
-      if (existsSync(path.join(root, file))) {
-        manager = name;
-        break;
-      }
+  // The lockfile is looked up even when `packageManager` already named the manager: a frozen
+  // install needs the file to exist, and the renderer cannot tell otherwise. When the manager is
+  // pinned, only that manager's lockfile counts.
+  let lockfile: string | undefined;
+  for (const [file, name] of LOCKFILES) {
+    if (packageManager !== undefined && name !== manager) continue;
+    if (existsSync(path.join(root, file))) {
+      lockfile = file;
+      if (packageManager === undefined) manager = name;
+      break;
     }
   }
   const info: PackageInfo = { manager, hasTailwind };
   if (packageManager !== undefined) info.packageManager = packageManager;
+  if (managerMajor !== undefined) info.managerMajor = managerMajor;
+  if (lockfile !== undefined) info.lockfile = lockfile;
   return info;
 }
 
+/**
+ * Actions for the generated workflow, pinned to full commit SHAs — GitHub documents only a SHA as
+ * immutable, and this mirrors the pinning policy of this repo's own CI. Bump these together with
+ * `.github/workflows/ci.yml`.
+ */
+const ACTIONS = {
+  checkout: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', // v7.0.1
+  setupNode: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', // v7.0.0
+  pnpmSetup: 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413', // v6.1.0
+  setupBun: 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6', // v2
+  uploadSarif: 'github/codeql-action/upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff', // v4
+} as const;
+
+/** pnpm major written into `action-setup` when the project pins no `packageManager`. */
+const PNPM_FALLBACK_MAJOR = 10;
+
+/** Install command for the manager, narrowed by whether a lockfile is actually there. */
+function installRun(info: PackageInfo, frozen: boolean): string {
+  switch (info.manager) {
+    case 'pnpm':
+      return `      - run: pnpm install ${frozen ? '--frozen-lockfile' : '--no-frozen-lockfile'}\n`;
+    case 'yarn':
+      if (!frozen) return '      - run: yarn install\n';
+      if (info.managerMajor === 1) return '      - run: yarn install --frozen-lockfile\n';
+      if (info.managerMajor !== undefined) return '      - run: yarn install --immutable\n';
+      // Without a pinned major the flag cannot be chosen: Yarn 1 rejects `--immutable` and
+      // Yarn 2+ rejects `--frozen-lockfile`. Install plainly and say what to add.
+      return '      - run: yarn install # pin packageManager, then add --immutable (Yarn 2+) or --frozen-lockfile (Yarn 1)\n';
+    case 'bun':
+      return `      - run: bun install${frozen ? ' --frozen-lockfile' : ''}\n`;
+    default:
+      return `      - run: npm ${frozen ? 'ci' : 'install'}\n`;
+  }
+}
+
 function installSteps(info: PackageInfo): string {
-  const setup =
-    info.manager === 'pnpm'
-      ? `      - uses: pnpm/action-setup@v4\n`
-      : info.manager === 'bun'
-        ? `      - uses: oven-sh/setup-bun@v2\n`
-        : '';
-  const cache =
+  const frozen = info.lockfile !== undefined;
+  let setup = '';
+  if (info.manager === 'pnpm') {
+    // `pnpm/action-setup` requires `version` unless the project pins `packageManager`, and stops
+    // the job when it finds neither: https://github.com/pnpm/action-setup#version
+    setup =
+      info.packageManager !== undefined
+        ? `      - uses: ${ACTIONS.pnpmSetup}\n`
+        : `      - uses: ${ACTIONS.pnpmSetup}\n        with:\n          version: ${PNPM_FALLBACK_MAJOR} # no packageManager in package.json; match your pnpm\n`;
+  } else if (info.manager === 'bun') {
+    setup = `      - uses: ${ACTIONS.setupBun}\n`;
+  }
+  // `setup-node`'s cache needs a lockfile to hash; it fails the step when there is none.
+  const cache = frozen ? `\n          cache: ${info.manager}` : '';
+  const node =
     info.manager === 'bun'
       ? ''
-      : `\n        with:\n          node-version: 20\n          cache: ${info.manager}`;
-  const node = info.manager === 'bun' ? '' : `      - uses: actions/setup-node@v4${cache}\n`;
-  const install =
-    info.manager === 'pnpm'
-      ? '      - run: pnpm install --frozen-lockfile\n'
-      : info.manager === 'yarn'
-        ? '      - run: yarn install --immutable\n'
-        : info.manager === 'bun'
-          ? '      - run: bun install --frozen-lockfile\n'
-          : '      - run: npm ci\n';
-  return setup + node + install;
+      : `      - uses: ${ACTIONS.setupNode}\n        with:\n          node-version: 20${cache}\n`;
+  return setup + node + installRun(info, frozen);
 }
 
 /**
- * Command that runs tw-ghost in CI. The generated workflow installs the project's dependencies but
- * does not add tw-ghost to them, so this has to work either way: `pnpm dlx` / `yarn dlx` / `bunx` /
- * `npx` all fetch the package when it is missing and use the installed one when it is present.
+ * Command that runs tw-ghost in CI, pinned to the version that wrote the workflow. The generated
+ * workflow installs the project's dependencies but does not add tw-ghost to them.
+ *
+ * `npx` and `bunx` prefer a locally installed binary and fall back to the registry. `pnpm dlx` and
+ * `yarn dlx` always fetch into a temporary environment — they do not use an installed copy. Pinning
+ * `@${VERSION}` makes every path run one version, so a later release cannot change a project's CI
+ * without a commit.
+ *
+ * Yarn 1 has no `dlx`, so it runs through `npx`; npm is available in every Yarn project.
  */
 function runner(info: PackageInfo): string {
+  const pkg = `tw-ghost@${VERSION}`;
   switch (info.manager) {
     case 'pnpm':
-      return 'pnpm dlx';
+      return `pnpm dlx ${pkg}`;
     case 'yarn':
-      return 'yarn dlx';
+      return info.managerMajor !== undefined && info.managerMajor >= 2
+        ? `yarn dlx ${pkg}`
+        : `npx ${pkg}`;
     case 'bun':
-      return 'bunx';
+      return `bunx ${pkg}`;
     default:
-      return 'npx';
+      return `npx ${pkg}`;
   }
 }
 
@@ -152,19 +214,57 @@ export interface WorkflowOptions {
   info: PackageInfo;
   /** `--config` argument for the generated commands; omitted when auto-detection is enough. */
   config?: string | undefined;
+  /** Branch for the `push:` filter. Default: `main`, with a note that it was not detected. */
+  branch?: string | undefined;
   sarif: boolean;
+}
+
+/** Quote a value as a YAML single-quoted scalar. */
+function yamlSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Default branch of the repository at `root`, read from `origin/HEAD` (set by `git clone`).
+ * Undefined when there is no git repo or no remote HEAD.
+ */
+function detectDefaultBranch(root: string): string | undefined {
+  try {
+    const ref = execFileSync('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    const name = ref.replace(/^origin\//, '');
+    return name.length > 0 ? name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function renderWorkflow(options: WorkflowOptions): string {
   const { info, sarif } = options;
   const run = runner(info);
-  const configArg = options.config ? ` --config ${options.config}` : '';
+  if (options.config?.includes('\n')) {
+    throw new TwGhostConfigError('--config: path must not contain a newline');
+  }
+  // The config path travels through `env`, not the `run:` string: a path with a space would split
+  // into two arguments, and quotes or shell metacharacters would change the command.
+  const configEnv = options.config
+    ? `    env:\n      TW_GHOST_CONFIG: ${yamlSingleQuote(options.config)}\n`
+    : '';
+  const configArg = options.config ? ' --config "$TW_GHOST_CONFIG"' : '';
+  const branch = options.branch ?? 'main';
+  const branchNote =
+    options.branch === undefined
+      ? ' # default branch not detected — change this if yours is not main'
+      : '';
   const permissions = sarif
     ? 'permissions:\n  contents: read\n  security-events: write # upload-sarif\n'
     : 'permissions:\n  contents: read\n';
   const analyzeStep = sarif
-    ? `      # SARIF goes to a file; ghosts still make this step exit 1.\n      - run: ${run} tw-ghost --format sarif${configArg} > tw-ghost.sarif\n      - if: always() # upload the findings even when the step above failed\n        uses: github/codeql-action/upload-sarif@v3\n        with:\n          sarif_file: tw-ghost.sarif\n          category: tw-ghost\n`
-    : `      - run: ${run} tw-ghost --format github${configArg}\n`;
+    ? `      # SARIF goes to a file; ghosts still make this step exit 1.\n      - run: ${run} --format sarif${configArg} > tw-ghost.sarif\n      - if: always() # upload the findings even when the step above failed\n        uses: ${ACTIONS.uploadSarif}\n        with:\n          sarif_file: tw-ghost.sarif\n          category: tw-ghost\n`
+    : `      - run: ${run} --format github${configArg}\n`;
   return `# Written by tw-ghost ${VERSION} (\`tw-ghost init\`).
 # Fails the check when a Tailwind class in this project produces no CSS.
 # Docs: https://github.com/changbaebang/tw-ghost#readme
@@ -172,15 +272,15 @@ name: tw-ghost
 
 on:
   push:
-    branches: [main]
+    branches: [${branch}]${branchNote}
   pull_request:
 
 ${permissions}
 jobs:
   tw-ghost:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+${configEnv}    steps:
+      - uses: ${ACTIONS.checkout}
 ${installSteps(info)}${analyzeStep}`;
 }
 
@@ -219,6 +319,8 @@ export async function init(options: InitOptions = {}): Promise<InitResult> {
   const files: InitFile[] = [];
   const workflowName = options.workflow ?? 'tw-ghost.yml';
   const workflowOptions: WorkflowOptions = { info, sarif };
+  const branch = options.branch ?? detectDefaultBranch(root);
+  if (branch !== undefined) workflowOptions.branch = branch;
   // Only pass --config in the workflow when auto-detection would not find the same file: a config
   // at the root is found by walking up from the working directory.
   if (configRel && configRel.includes('/')) workflowOptions.config = configRel;

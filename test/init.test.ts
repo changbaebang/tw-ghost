@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { detectPackageInfo, init, renderWorkflow } from '../src/index.js';
+import { VERSION } from '../src/version.js';
 import { fixture } from './helpers.js';
 
 /** A throwaway project copied from a fixture, with node_modules linked so Tailwind resolves. */
@@ -39,7 +40,9 @@ describe('detectPackageInfo', () => {
     expect(detectPackageInfo(dir)).toEqual({
       manager: 'pnpm',
       packageManager: 'pnpm@9.1.0',
+      managerMajor: 9,
       hasTailwind: true,
+      // yarn.lock is present but packageManager pins pnpm, so only pnpm-lock.yaml would count.
     });
 
     writeFileSync(path.join(dir, 'package.json'), '{ not json');
@@ -48,25 +51,135 @@ describe('detectPackageInfo', () => {
 });
 
 describe('renderWorkflow', () => {
-  it('uses the right setup, install and runner per package manager', () => {
+  it('uses the right setup and runner per package manager, pinned to this version', () => {
+    // No `lockfile` in the info: this is the "manager known, lockfile absent" path.
     const yml = (manager: 'npm' | 'pnpm' | 'yarn' | 'bun') =>
       renderWorkflow({ info: { manager, hasTailwind: true }, sarif: true });
-    expect(yml('pnpm')).toContain('pnpm/action-setup@v4');
-    expect(yml('pnpm')).toContain('pnpm install --frozen-lockfile');
-    expect(yml('pnpm')).toContain('pnpm dlx tw-ghost --format sarif');
-    expect(yml('yarn')).toContain('yarn install --immutable');
-    expect(yml('yarn')).toContain('yarn dlx tw-ghost');
-    expect(yml('npm')).toContain('npm ci');
-    expect(yml('npm')).toContain('npx tw-ghost');
-    expect(yml('bun')).toContain('oven-sh/setup-bun@v2');
-    expect(yml('bun')).toContain('bunx tw-ghost');
+    expect(yml('pnpm')).toContain('pnpm/action-setup@ea17c68');
+    expect(yml('pnpm')).toContain(`pnpm dlx tw-ghost@${VERSION} --format sarif`);
+    expect(yml('yarn')).toContain(`npx tw-ghost@${VERSION}`); // no pinned major -> no yarn dlx
+    expect(yml('npm')).toContain(`npx tw-ghost@${VERSION}`);
+    expect(yml('bun')).toContain('oven-sh/setup-bun@0c5077e');
+    expect(yml('bun')).toContain(`bunx tw-ghost@${VERSION}`);
     expect(yml('bun')).not.toContain('actions/setup-node');
+    // Every action is pinned to a 40-char SHA; a floating tag would be a regression.
+    for (const manager of ['npm', 'pnpm', 'yarn', 'bun'] as const) {
+      for (const ref of yml(manager).match(/uses: \S+/g) ?? []) {
+        expect(ref).toMatch(/@[0-9a-f]{40}$/);
+      }
+    }
+  });
+
+  it('installs frozen only when a lockfile is actually present', () => {
+    const yml = (info: Parameters<typeof renderWorkflow>[0]['info']) =>
+      renderWorkflow({ info, sarif: false });
+
+    // npm: `npm ci` needs a lockfile; without one it always fails.
+    expect(yml({ manager: 'npm', hasTailwind: true })).toContain('npm install');
+    expect(yml({ manager: 'npm', hasTailwind: true })).not.toContain('npm ci');
+    expect(yml({ manager: 'npm', hasTailwind: true, lockfile: 'package-lock.json' })).toContain(
+      'npm ci',
+    );
+
+    // setup-node's cache hashes the lockfile; it fails the step when there is none.
+    expect(yml({ manager: 'npm', hasTailwind: true })).not.toContain('cache:');
+    expect(yml({ manager: 'npm', hasTailwind: true, lockfile: 'package-lock.json' })).toContain(
+      'cache: npm',
+    );
+
+    // pnpm without packageManager: action-setup needs an explicit version or the job stops.
+    const lockOnly = yml({ manager: 'pnpm', hasTailwind: true, lockfile: 'pnpm-lock.yaml' });
+    expect(lockOnly).toMatch(/^ +version: \d+/m); // action-setup's own `with:`, not node-version
+    expect(lockOnly).toContain('pnpm install --frozen-lockfile');
+    const pinned = yml({
+      manager: 'pnpm',
+      hasTailwind: true,
+      packageManager: 'pnpm@9.1.0',
+      managerMajor: 9,
+      lockfile: 'pnpm-lock.yaml',
+    });
+    expect(pinned).not.toMatch(/^ +version: \d+/m); // action reads packageManager itself
+
+    // Yarn 1 has no --immutable; Yarn 2+ removed --frozen-lockfile.
+    const yarn1 = yml({
+      manager: 'yarn',
+      hasTailwind: true,
+      packageManager: 'yarn@1.22.22',
+      managerMajor: 1,
+      lockfile: 'yarn.lock',
+    });
+    expect(yarn1).toContain('yarn install --frozen-lockfile');
+    expect(yarn1).toContain(`npx tw-ghost@${VERSION}`); // Yarn 1 has no dlx
+    const berry = yml({
+      manager: 'yarn',
+      hasTailwind: true,
+      packageManager: 'yarn@4.5.0',
+      managerMajor: 4,
+      lockfile: 'yarn.lock',
+    });
+    expect(berry).toContain('yarn install --immutable');
+    expect(berry).toContain(`yarn dlx tw-ghost@${VERSION}`);
+    // Lockfile but no pinned major: neither flag is safe, so the command carries neither. The
+    // trailing note names both flags, so only the part before `#` may be asserted on.
+    const yarnUnknown = yml({ manager: 'yarn', hasTailwind: true, lockfile: 'yarn.lock' });
+    const yarnCmd = (yarnUnknown.match(/^ +- run: yarn install.*$/m)?.[0] ?? '').split('#')[0];
+    expect(yarnCmd).toContain('yarn install');
+    expect(yarnCmd).not.toContain('--immutable');
+    expect(yarnCmd).not.toContain('--frozen-lockfile');
+    expect(yarnUnknown).toContain('pin packageManager'); // the note says what to add
+
+    expect(yml({ manager: 'bun', hasTailwind: true, lockfile: 'bun.lock' })).toContain(
+      'bun install --frozen-lockfile',
+    );
+    expect(yml({ manager: 'bun', hasTailwind: true })).toContain('bun install\n');
+  });
+
+  it('passes the config through env so a path with a space survives the shell', () => {
+    const spaced = renderWorkflow({
+      info: { manager: 'npm', hasTailwind: true },
+      sarif: false,
+      config: 'apps/my web/tailwind.config.ts',
+    });
+    expect(spaced).toContain("TW_GHOST_CONFIG: 'apps/my web/tailwind.config.ts'");
+    expect(spaced).toContain('--config "$TW_GHOST_CONFIG"');
+    expect(spaced).not.toContain('--config apps/my web');
+
+    // A single quote in the path is escaped for the YAML scalar, not for the shell.
+    const quoted = renderWorkflow({
+      info: { manager: 'npm', hasTailwind: true },
+      sarif: false,
+      config: "apps/o'brien/tailwind.config.ts",
+    });
+    expect(quoted).toContain("TW_GHOST_CONFIG: 'apps/o''brien/tailwind.config.ts'");
+
+    // A newline would break the YAML scalar outright.
+    expect(() =>
+      renderWorkflow({
+        info: { manager: 'npm', hasTailwind: true },
+        sarif: false,
+        config: 'apps/a\nb/tailwind.config.ts',
+      }),
+    ).toThrow(/newline/);
+  });
+
+  it('filters push on the given branch, and says so when it had to guess', () => {
+    const guessed = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: false });
+    expect(guessed).toContain('branches: [main]');
+    expect(guessed).toContain('not detected');
+
+    const trunk = renderWorkflow({
+      info: { manager: 'npm', hasTailwind: true },
+      sarif: false,
+      branch: 'trunk',
+    });
+    expect(trunk).toContain('branches: [trunk]');
+    expect(trunk).not.toContain('not detected');
   });
 
   it('asks for security-events only with sarif, and passes --config when it is nested', () => {
     const sarif = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: true });
     expect(sarif).toContain('security-events: write');
-    expect(sarif).toContain('upload-sarif@v3');
+    expect(sarif).toContain('upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff');
     expect(sarif).toContain('if: always()');
 
     const gh = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: false });
@@ -78,7 +191,8 @@ describe('renderWorkflow', () => {
       sarif: true,
       config: 'apps/web/tailwind.config.ts',
     });
-    expect(nested).toContain('--config apps/web/tailwind.config.ts');
+    expect(nested).toContain("TW_GHOST_CONFIG: 'apps/web/tailwind.config.ts'");
+    expect(nested).toContain('--config "$TW_GHOST_CONFIG"');
   });
 });
 
@@ -92,7 +206,7 @@ describe('init', () => {
       ['.github/workflows/tw-ghost.yml', 'created'],
       ['tw-ghost.fixes.json', 'created'],
     ]);
-    expect(workflowOf(dir)).toContain('pnpm dlx tw-ghost');
+    expect(workflowOf(dir)).toContain(`pnpm dlx tw-ghost@${VERSION}`);
     const draft = JSON.parse(readFileSync(path.join(dir, 'tw-ghost.fixes.json'), 'utf8'));
     // Keys are bare utilities, so variants of one class collapse into a single entry: at most one
     // key per ghost, never more.
