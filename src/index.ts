@@ -41,6 +41,7 @@ export {
   type GithubFormatResult,
 } from './format-github.js';
 export {
+  automationIdFor,
   classFingerprint,
   encodeUriPath,
   formatSarif,
@@ -95,7 +96,9 @@ export {
   type ConfigFailure,
   type ConfigReport,
   type ConfigResult,
+  configLabel,
   isConfigFailure,
+  isMultiConfigRequest,
   type MultiReport,
   type MultiSummary,
   type ResolveConfigsOptions,

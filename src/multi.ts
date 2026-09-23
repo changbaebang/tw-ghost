@@ -75,6 +75,27 @@ export async function resolveConfigPaths(options: ResolveConfigsOptions = {}): P
 
 export type AnalyzeManyOptions = Omit<AnalyzeOptions, 'config'>;
 
+/** How a config is named in a {@link ConfigReport} and in SARIF `automationDetails.id`. */
+export function configLabel(cwd: string, absolute: string): string {
+  return toPosix(path.relative(path.resolve(cwd), absolute)) || '.';
+}
+
+/**
+ * Did the caller ask for *several* configs, regardless of how many exist right now?
+ *
+ * `--all-configs` and a glob both resolve to a count that changes as the repository changes, so the
+ * count cannot stand in for the intent: a monorepo that drops to one config still made a
+ * multi-config request, and its surviving run has to keep the id it had. A plain `--config <path>`
+ * (or no flag at all, meaning auto-detect) is a single-config request and stays unnamed, so
+ * `upload-sarif`'s `category:` names it.
+ */
+export function isMultiConfigRequest(options: ResolveConfigsOptions = {}): boolean {
+  if (options.all === true) return true;
+  const configs = options.configs ?? [];
+  if (configs.length > 1) return true;
+  return configs.some((raw) => isDynamicPattern(toGlobPattern(raw)));
+}
+
 /** One successfully analyzed config: `config` (relative to `cwd`) plus the usual report. */
 export interface ConfigReport extends Report {
   config: string;
@@ -131,7 +152,7 @@ export async function analyzeMany(
   };
   for (const configInput of configs) {
     const absolute = path.resolve(cwd, configInput);
-    const config = toPosix(path.relative(cwd, absolute)) || '.';
+    const config = configLabel(cwd, absolute);
     try {
       if (!existsSync(absolute)) {
         throw new TwGhostConfigError(`Config file not found: ${absolute}`);

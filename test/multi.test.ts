@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   analyze,
   analyzeMany,
+  configLabel,
   isConfigFailure,
+  isMultiConfigRequest,
   resolveConfigPaths,
   TwGhostConfigError,
 } from '../src/index.js';
@@ -168,5 +170,42 @@ describe('analyzeMany', () => {
       error: expect.stringContaining('Config file not found'),
     });
     expect(report.summary).toMatchObject({ configs: 3, failed: 2, ghost: 2 });
+  });
+});
+
+describe('isMultiConfigRequest', () => {
+  it('reads the request, not how many configs happen to exist', () => {
+    // Counts that move as the repository moves: the intent stays multi even at one match.
+    expect(isMultiConfigRequest({ all: true })).toBe(true);
+    expect(
+      isMultiConfigRequest({ configs: ['a/tailwind.config.ts', 'b/tailwind.config.ts'] }),
+    ).toBe(true);
+    expect(isMultiConfigRequest({ configs: ['apps/*/tailwind.config.ts'] })).toBe(true);
+    // Separators go through `toGlobPattern` first, which rewrites them only on Windows — there
+    // `apps\*\...` is a glob, while on POSIX a backslash is a literal character in a filename, so
+    // the same string names one concrete path. The predicate follows resolveConfigPaths either way.
+    expect(isMultiConfigRequest({ configs: ['apps\\*\\tailwind.config.ts'] })).toBe(
+      process.platform === 'win32',
+    );
+
+    // A single concrete path, or no flag at all, is a single-config request.
+    expect(isMultiConfigRequest({ configs: ['tailwind.config.ts'] })).toBe(false);
+    expect(isMultiConfigRequest({})).toBe(false);
+  });
+});
+
+describe('configLabel', () => {
+  it('names a config relative to the shared cwd, in POSIX, matching ConfigReport.config', async () => {
+    const report = await analyzeMany([path.join(monorepo, 'apps/web/tailwind.config.ts')], {
+      cwd: monorepo,
+      suggestions: false,
+    });
+    const entry = report.configs[0];
+    expect(entry?.config).toBe('apps/web/tailwind.config.ts');
+    expect(configLabel(monorepo, path.join(monorepo, 'apps/web/tailwind.config.ts'))).toBe(
+      entry?.config,
+    );
+    // The cwd itself collapses to '.' rather than an empty string.
+    expect(configLabel(monorepo, monorepo)).toBe('.');
   });
 });

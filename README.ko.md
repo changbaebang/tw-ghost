@@ -253,13 +253,48 @@ jobs:
 합치면 그 판정을 설명하는 유일한 정보를 버리게 된다. code scanning 은 run 을 따로 보여주므로 이
 구분이 그대로 남는다. `uri` 는 각 설정 폴더가 아니라 저장소 루트 기준이라, 두 앱이 함께 잡은 공용
 패키지가 양쪽에서 같은 파일을 가리킨다. 로드에 실패한 설정은 run 이 되지 않는다 — 이미 stderr 에
-찍혔고 이미 종료 코드 `2` 를 만든다. 두 가지 주의:
+찍혔고 이미 종료 코드 `2` 를 만든다. 세 가지 주의:
 
-- run 이 하나뿐이면 `automationDetails` 를 **넣지 않는다**. 그래야 `upload-sarif` 의 `category:` 가
-  문서대로 그 run 의 이름이 된다. 설정별 id 는 run 이 둘 이상일 때만 나타난다.
+- **id 는 설정이 몇 개 성공했는지, 몇 개 발견됐는지에 따라 달라지지 않는다.** 판단 기준은 *요청*이다 —
+  `--all-configs`, glob, 반복 `--config` 는 하나만 매치돼도 설정별 id 를 받는다. code scanning 은 이
+  id 로 분석을 식별하므로, 개수로 정하면 형제 설정이 깨지거나 삭제된 순간 살아남은 설정이 개명되고
+  GitHub 은 그것을 다른 분석으로 읽는다 — 바뀐 적 없는 설정의 alert 을 은퇴시키고 새로 연다. 스캔을
+  가장 못 믿을 때 정확히 그렇게 된다.
+- **단일 설정 요청**(경로 하나짜리 `--config`, 또는 자동 탐지)은 `automationDetails` 를 **넣지 않는다**.
+  그래야 `upload-sarif` 의 `category:` 가 그 run 의 이름이 된다. 이건 action 이 빈 자리를 채우는 것이고
+  덮어쓰는 게 아니다 — `automationDetails` 가 없을 때만 설정하므로 위의 설정별 id 는 업로드 후에도
+  그대로 남는다.
 - GitHub 은 [SARIF 파일 하나당 run 20개](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit)까지만
   받는다. Tailwind 설정이 20개를 넘는 저장소는 업로드를 나눠야 한다(설정을 묶어 여러 번 실행하고
   업로드마다 다른 `category:` 를 준다).
+
+**불완전한 스캔은 baseline 이 되어선 안 된다.** 종료 코드 `1` 은 유령을 찾았고 스캔은 끝났다는
+뜻이라 그 로그는 완전하고, 업로드하는 것이 이 잡의 목적이다. `2` 는 tw-ghost 가 끝내지 못했다는
+뜻이다 — 설정 하나가 로드에 실패했고 그 run 은 아예 없다. 그 로그를 올리면 빠진 설정의 alert 이
+고쳐진 것처럼 은퇴한다. 그래서 `tw-ghost init` 이 쓰는 워크플로는 `if: always()` 대신 종료 코드로
+업로드를 막는다:
+
+```yaml
+- id: scan
+  shell: bash
+  run: |
+    code=0
+    npx tw-ghost@<워크플로를 쓴 버전> --format sarif > tw-ghost.sarif || code=$?
+    echo "code=$code" >> "$GITHUB_OUTPUT"
+    exit "$code"
+- if: ${{ !cancelled() && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1') }}
+  uses: github/codeql-action/upload-sarif@<sha>
+  with:
+    sarif_file: tw-ghost.sarif
+    category: tw-ghost
+```
+
+`|| code=$?` 는 `bash -e` 가 코드를 기록하기 전에 중단하는 것을 막고, `exit "$code"` 가 그것을 다시
+올려 유령이 여전히 체크를 실패시키게 한다. 게이트는 업로드해도 되는 코드를 열거하므로 예상 못 한
+코드는 업로드하지 않는다 — 그리고 "끝내지 못했다"에 tw-ghost 가 쓰는 코드는 예상치 못한 예외까지
+포함해 `2` 하나뿐이라 더 열거할 것이 없다. `shell: bash` 를 명시한 이유는 여러 줄 스크립트이기
+때문이다: 생성되는 `runs-on` 은 `ubuntu-latest` 지만 `windows-latest` 로 바꾸면 기본 셸이
+PowerShell 이 된다.
 
 stdout 은 파일로 넘어가므로 한 줄 요약
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`)은 stderr 로 나간다.

@@ -11,7 +11,10 @@ All notable changes to this project are documented here. The format follows
 - **`tw-ghost init`**: scans once and scaffolds the project — a GitHub Actions workflow whose install steps and
   runner match the detected package manager (`packageManager`, else the lockfile: pnpm / yarn / npm / bun) and
   whose analysis step uploads SARIF (`--no-sarif` for `--format github` instead), plus a fix-map draft when the
-  scan finds ghosts. Never overwrites (existing files are reported as `exists`), installs nothing, and exits `0`
+  scan finds ghosts. The SARIF step names its shell (`shell: bash`), records tw-ghost's exit code and gates the
+  upload on it — `0` and `1` upload, `2` does not, because exit `2` means a config failed to load and its runs are
+  absent, so uploading would retire their alerts as though the classes had been fixed. Ghosts still fail the job.
+  Never overwrites (existing files are reported as `exists`), installs nothing, and exits `0`
   even with findings. Flags: `--dry-run`, `--no-sarif`, `--no-fix-map`, `--workflow <name>`, `--config`, `--json`.
   Programmatic: `init()`, `renderWorkflow()`, `detectPackageInfo()`, `formatInit()`.
 - **`--format sarif`**: a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log on
@@ -28,9 +31,15 @@ All notable changes to this project are documented here. The format follows
   with no line in it, so moving code does not close an alert and open a new one. Exit codes unchanged; the
   one-line summary goes to stderr because stdout is redirected into the `.sarif` file.
 - **Several configs → several SARIF runs**: `--all-configs` / repeated `--config` emit one `run` per config, each
-  with `automationDetails.id` of `tw-ghost/<config path>` (a lone run carries none, so `upload-sarif`'s
-  `category:` still names it) and repo-relative `uri`s throughout. Configs that failed to load contribute no run.
-- Programmatic API: `formatSarif()`, `formatSarifMany()`, `sarifRules()`, `classFingerprint()`, `encodeUriPath()`,
+  with `automationDetails.id` of `tw-ghost/<config path>` and repo-relative `uri`s throughout. Configs that failed
+  to load contribute no run. The id follows the **request**, not a count — neither how many configs succeeded nor
+  how many were found — so a multi-config request that matches one config is still named, and a sibling config
+  breaking or being deleted does not rename the one that stayed. (Code scanning keys an analysis by that id; a
+  rename retires and re-opens the alerts of a config that never changed.) A single-config request — a `--config`
+  naming one path, or auto-detection — carries no `automationDetails`, so `upload-sarif`'s `category:` names it;
+  the action fills that field only when it is absent, so it never overwrites the per-config ids.
+- Programmatic API: `formatSarif()`, `formatSarifMany()`, `automationIdFor()`, `configLabel()`,
+  `isMultiConfigRequest()`, `sarifRules()`, `classFingerprint()`, `encodeUriPath()`,
   `SARIF_SCHEMA_URI`, `SARIF_VERSION`, `SARIF_URI_BASE_ID`, `SARIF_FINGERPRINT_KEY`, `SARIF_MAX_SUGGESTIONS`,
   `SARIF_TOOL_NAME`, `GHOST_RULE_ID`, `UNKNOWN_UTILITY_RULE_ID`, `UNKNOWN_VARIANT_RULE_ID` and the `Sarif*` types.
 - **ESLint plugin** as a subpath, `tw-ghost/eslint` (ESLint ≥ 9 flat config, no ESLint dependency): rule
