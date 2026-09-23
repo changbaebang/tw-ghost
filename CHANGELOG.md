@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`--format sarif`**: a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log on
+  stdout, for `github/codeql-action/upload-sarif` — ghosts become tracked **code scanning alerts** instead of
+  annotations that vanish with the check run. One `result` per **occurrence**, never capped (`--max-annotations`
+  does not apply and `--max-locations` is forced to *all*; GitHub's own top-5,000-per-run limit still applies at
+  upload). `tool.driver` carries `name` / `version` / `semanticVersion` / `informationUri` and declares only the
+  rules the run can produce: `ghost-class` (`error`) always, `unknown-utility-like` and `unknown-variant` (`note`)
+  with `--unknown`; each rule has `shortDescription`, `fullDescription`, `help` (text + markdown),
+  `defaultConfiguration.level` and `properties.tags`. Each result has `ruleId` / `ruleIndex` / `level`, a
+  `message.text` naming the class, the declarations stock Tailwind would have set and up to 3 suggestions, a
+  `physicalLocation` with a repo-relative percent-encoded `uri` under `uriBaseId: "%SRCROOT%"` and a 1-based
+  `region` covering exactly the class, and `partialFingerprints.twGhostClassV1` — a SHA-256 of `class + file`
+  with no line in it, so moving code does not close an alert and open a new one. Exit codes unchanged; the
+  one-line summary goes to stderr because stdout is redirected into the `.sarif` file.
+- **Several configs → several SARIF runs**: `--all-configs` / repeated `--config` emit one `run` per config, each
+  with `automationDetails.id` of `tw-ghost/<config path>` (a lone run carries none, so `upload-sarif`'s
+  `category:` still names it) and repo-relative `uri`s throughout. Configs that failed to load contribute no run.
+- Programmatic API: `formatSarif()`, `formatSarifMany()`, `sarifRules()`, `classFingerprint()`, `encodeUriPath()`,
+  `SARIF_SCHEMA_URI`, `SARIF_VERSION`, `SARIF_URI_BASE_ID`, `SARIF_FINGERPRINT_KEY`, `SARIF_MAX_SUGGESTIONS`,
+  `SARIF_TOOL_NAME`, `GHOST_RULE_ID`, `UNKNOWN_UTILITY_RULE_ID`, `UNKNOWN_VARIANT_RULE_ID` and the `Sarif*` types.
 - **ESLint plugin** as a subpath, `tw-ghost/eslint` (ESLint ≥ 9 flat config, no ESLint dependency): rule
   `tw-ghost/no-ghost-class` reports every ghost class in `className` / `class` attributes (literals, template
   text, ternaries, `&&`, arrays, object keys) and in `clsx`/`cx`/`cn`/`classnames`/`cva`/`tv`/`twMerge`/`twJoin`

@@ -9,6 +9,7 @@ import { describeEnvironment, type EnvReport, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
 import { applyFixMap, draftFixMap, formatFix, parseFixMap } from './fix.js';
 import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
+import { formatSarif, formatSarifMany } from './format-sarif.js';
 import { type AnalyzeManyOptions, analyzeMany, resolveConfigPaths } from './multi.js';
 import { formatHuman, formatHumanMany } from './report.js';
 
@@ -30,8 +31,10 @@ Options
                             (hoisted / strict monorepos where the config's folder cannot reach it)
       --env                 print the resolved environment (config, tailwindcss, postcss, globs)
                             and exit — paste this into bug reports; honours --json
-      --format <mode>       human | json | github (default: human)
+      --format <mode>       human | json | github | sarif (default: human)
                             github = one ::error workflow-command annotation per ghost occurrence
+                            sarif  = a SARIF 2.1.0 log for GitHub Code Scanning (uncapped;
+                                     --max-annotations does not apply)
       --json                alias for --format json
       --max-annotations <n> github: annotations printed before the rest are summarised in a
                             ::notice, 0 = all (default: 50)
@@ -66,6 +69,7 @@ Examples
   npx tw-ghost --json --unknown --ignore "^legacy-"
   npx tw-ghost --all-configs --json     # monorepo: every config, one JSON document
   npx tw-ghost --format github          # in a GitHub Actions step
+  npx tw-ghost --format sarif > tw-ghost.sarif   # upload to GitHub Code Scanning
 `;
 
 /**
@@ -123,7 +127,7 @@ function envMany(configPaths: string[], tailwind: string | undefined, json: bool
 async function runMany(
   configPaths: string[],
   options: AnalyzeManyOptions & {
-    format: 'human' | 'json' | 'github';
+    format: 'human' | 'json' | 'github' | 'sarif';
     maxAnnotations: number;
     color: boolean;
     failOn: 'ghost' | 'none';
@@ -144,6 +148,13 @@ async function runMany(
     );
   }
   const code = multi.summary.failed > 0 ? 2 : failOn === 'ghost' && multi.summary.ghost > 0 ? 1 : 0;
+  if (format === 'sarif') {
+    // One run per config; configs that failed to load contribute no run (they are already on
+    // stderr above and already force exit 2).
+    const sarif = formatSarifMany(multi, { unknown: analyzeOptions.unknown });
+    process.stderr.write(`${sarif.summary}\n`);
+    return exitAfterWrite(process.stdout, `${JSON.stringify(sarif.log, null, 2)}\n`, code);
+  }
   if (format === 'github') {
     // One annotation stream across configs under a single cap; the summary goes to stderr.
     const lines: string[] = [];
@@ -205,8 +216,10 @@ async function main(): Promise<never> {
   if (values.help) return exitAfterWrite(process.stdout, HELP, 0);
   if (values.version) return exitAfterWrite(process.stdout, `${version}\n`, 0);
   const format = values.format ?? (values.json ? 'json' : 'human');
-  if (format !== 'human' && format !== 'json' && format !== 'github') {
-    return fail(`--format must be "human", "json" or "github" (got ${JSON.stringify(format)})`);
+  if (format !== 'human' && format !== 'json' && format !== 'github' && format !== 'sarif') {
+    return fail(
+      `--format must be "human", "json", "github" or "sarif" (got ${JSON.stringify(format)})`,
+    );
   }
   if (values.json && format !== 'json') {
     return fail(
@@ -255,7 +268,7 @@ async function main(): Promise<never> {
       allowEmpty: values['allow-empty'],
       ignore: values.ignore,
       unknown: values.unknown,
-      maxLocations: format === 'github' ? 0 : maxLocations,
+      maxLocations: format === 'github' || format === 'sarif' ? 0 : maxLocations,
       suggestions: !values['no-suggestions'],
       tailwind: values.tailwind,
       format,
@@ -272,8 +285,8 @@ async function main(): Promise<never> {
     ignore: values.ignore,
     unknown: values.unknown,
     unknownAll: values['unknown-all'],
-    // github annotates every occurrence, so it needs the unclipped location list (0 = all)
-    maxLocations: format === 'github' ? 0 : maxLocations,
+    // github and sarif report every occurrence, so they need the unclipped list (0 = all)
+    maxLocations: format === 'github' || format === 'sarif' ? 0 : maxLocations,
     suggestions: !values['no-suggestions'],
     tailwind: values.tailwind,
   });
@@ -333,6 +346,11 @@ async function main(): Promise<never> {
     const gh = formatGithub(report, { maxAnnotations });
     process.stderr.write(`${gh.summary}\n`);
     output = gh.output === '' ? '' : `${gh.output}\n`;
+  } else if (format === 'sarif') {
+    // Uncapped by design: SARIF feeds a viewer that pages and groups on its own.
+    const sarif = formatSarif(report, { unknown: values.unknown });
+    process.stderr.write(`${sarif.summary}\n`);
+    output = `${JSON.stringify(sarif.log, null, 2)}\n`;
   } else {
     output = `${formatHuman(report, { color: !values['no-color'], unknownAll: values['unknown-all'] })}\n`;
   }

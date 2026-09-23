@@ -120,6 +120,130 @@ GitHub 은 체크 UI 에 **스텝당 레벨(error / warning / notice)별 10개, 
 `::notice::tw-ghost: K more annotations omitted` 를 출력해 잘렸음을 보이게 한다. `--json` 은
 변경 없이 도구 연동용 형식으로 남는다.
 
+#### Code Scanning (SARIF)
+
+주석은 체크 실행과 함께 사라진다. `--format sarif` 는
+[`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action) 에 바로 올릴 수 있는
+[SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) 로그를 stdout 으로
+출력한다. 그러면 유령은 주석이 아니라 **code scanning 경고**가 된다 — *Security* 탭에 쌓이고, PR 에
+인라인으로 뜨고, 추적된다(코드가 이동해도 같은 경고로 남고, 클래스를 고치면 닫힌다).
+
+```yaml
+permissions:
+  contents: read
+  security-events: write # 결과 업로드에 필요
+
+jobs:
+  tw-ghost:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx tw-ghost --format sarif > tw-ghost.sarif
+      - if: always() # 유령이 있으면 종료 코드 1 이지만 결과는 올린다
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tw-ghost.sarif
+          category: tw-ghost
+```
+
+종료 코드는 그대로이므로 유령이 있으면 job 은 여전히 실패한다. 그래도 경고가 올라가게 하는 것이
+`if: always()` 다. (종료 코드 `2` 인 설정 오류면 stdout 에 아무것도 쓰지 않으므로 업로드 스텝이 빈
+파일에서 실패한다 — 그게 원하는 신호다.)
+
+로그는 이런 모양이다(result 하나만 남겨 줄임):
+
+```jsonc
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tw-ghost",
+          "version": "0.3.0",
+          "semanticVersion": "0.3.0",
+          "informationUri": "https://github.com/changbaebang/tw-ghost#readme",
+          "rules": [
+            {
+              "id": "ghost-class",
+              "name": "GhostClass",
+              "shortDescription": { "text": "Tailwind class that produces no CSS in this config" },
+              "fullDescription": { "text": "The class is a valid stock Tailwind utility, but …" },
+              "help": { "text": "Replace the class with one …", "markdown": "**A class that …**" },
+              "defaultConfiguration": { "level": "error" },
+              "properties": { "tags": ["tailwindcss", "dead-code"] }
+            }
+          ]
+        }
+      },
+      "columnKind": "utf16CodeUnits",
+      "results": [
+        {
+          "ruleId": "ghost-class",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "text-sm produces no CSS in this Tailwind config (stock Tailwind: font-size: 0.875rem; line-height: 1.25rem) — try: text-l, text-m, text-s (+1 more)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/App.tsx", "uriBaseId": "%SRCROOT%" },
+                "region": { "startLine": 7, "startColumn": 21, "endColumn": 28 }
+              }
+            }
+          ],
+          "partialFingerprints": { "twGhostClassV1": "540c65051ed1cc37" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **발생 위치마다 `result` 하나, 상한 없음.** SARIF 는 스스로 묶고 페이징하는 뷰어가 읽으므로 맞출
+  표시 상한이 없다. `--max-annotations` 는 무시하고 `--max-locations` 는 *전부*로 강제한다. 올리는
+  쪽에서는 GitHub 이
+  [run 당 상위 5,000 건](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit)만
+  남긴다(최대 25,000). 그 자르기는 tw-ghost 가 아니라 GitHub 의 것이다.
+- **`message.text`** 에는 클래스, 기본 Tailwind 였다면 나왔을 선언, 그리고 대체 후보 최대 3개가
+  들어간다(나머지는 `(+N more)` 로 센다).
+- **`region`** 은 1-based 이고 클래스 길이만큼만 덮는다. `endColumn` 은 `startColumn` + 클래스 길이,
+  단위는 UTF-16 코드 유닛(`columnKind`)이다.
+- **`artifactLocation.uri`** 는 저장소 기준 상대 경로이고 POSIX 구분자이며 세그먼트 단위로
+  퍼센트 인코딩된다(공백 → `%20`, `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이
+  `GITHUB_WORKSPACE` 아래면 그 기준, 아니면 현재 디렉터리 기준 — `--format github` 의 `file=` 과
+  같은 규칙이다. 빌드 머신의 절대 경로는 로그에 들어가지 않는다.
+- **`partialFingerprints.twGhostClassV1`** 은 `클래스 + 파일` 의 SHA-256(16자리 hex)이다. 줄·열을
+  일부러 빼서, 코드가 이동해도 기존 경고가 닫히고 새 경고가 열리지 않게 한다. 그래서 한 파일 안의
+  같은 클래스 두 곳은 지문이 같다 — *partial* 지문의 목적이 그것이고, 나머지 식별은 위치가 한다.
+- **규칙은 그 실행이 낼 수 있는 것만 선언한다.** `ghost-class`(레벨 `error`)는 항상,
+  `unknown-utility-like` 와 `unknown-variant`(둘 다 레벨 `note` 라 경고 심각도를 올리지 않는다)는
+  `--unknown` 일 때만 선언되고, 그때만 결과도 나온다. 스키마상 쓰지 않는 규칙을 선언해도 되지만,
+  선언하지 않는 편이 그 실행의 어휘를 정직하게 보여준다.
+
+**설정이 여러 개면 run 도 여러 개.** `--all-configs`(또는 `--config` 반복)는 **설정마다 run 하나**를
+만들고, 각 run 은 자기 `tool.driver.rules` 와 `tw-ghost/<설정 경로>` 형태의 `automationDetails.id` 를
+갖는다. 같은 클래스가 한 설정에서는 유령이고 다른 설정에서는 멀쩡한 것이 정상이라, 하나의 run 으로
+합치면 그 판정을 설명하는 유일한 정보를 버리게 된다. code scanning 은 run 을 따로 보여주므로 이
+구분이 그대로 남는다. `uri` 는 각 설정 폴더가 아니라 저장소 루트 기준이라, 두 앱이 함께 잡은 공용
+패키지가 양쪽에서 같은 파일을 가리킨다. 로드에 실패한 설정은 run 이 되지 않는다 — 이미 stderr 에
+찍혔고 이미 종료 코드 `2` 를 만든다. 두 가지 주의:
+
+- run 이 하나뿐이면 `automationDetails` 를 **넣지 않는다**. 그래야 `upload-sarif` 의 `category:` 가
+  문서대로 그 run 의 이름이 된다. 설정별 id 는 run 이 둘 이상일 때만 나타난다.
+- GitHub 은 [SARIF 파일 하나당 run 20개](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit)까지만
+  받는다. Tailwind 설정이 20개를 넘는 저장소는 업로드를 나눠야 한다(설정을 묶어 여러 번 실행하고
+  업로드마다 다른 `category:` 를 준다).
+
+stdout 은 파일로 넘어가므로 한 줄 요약
+(`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`)은 stderr 로 나간다.
+
 Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
 `postcss` ^8 은 *선택적* peer 다: 설정 파일 옆에 `postcss` 가 설치되어 있으면 그것을 쓰고, 없으면
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
@@ -308,9 +432,9 @@ darkMode     "class"
 | `--all-configs` | off | cwd 아래의 모든 `tailwind.config.{ts,js,cjs,mjs}` 를 분석(`node_modules`, `dist`, `.next`, `build`, `out`, `coverage` 제외). 하나도 없으면 종료 코드 `2`. `--config` 와 함께 쓸 수 있다. |
 | `--tailwind <dir>` | 설정 파일 디렉터리 | `tailwindcss`(와 `postcss`)를 설정 파일 디렉터리 대신 이 디렉터리에서 해석. 설정 폴더에서 설치본에 닿지 못하는 레이아웃용. 설정 파일 자체는 여전히 제 위치에서 로드된다. |
 | `--env` | 꺼짐 | 해석한 환경(설정, `tailwindcss` 버전 + 경로, `postcss`, extractor, content glob, 경고)을 출력하고 0 으로 종료 — 또는 사전 점검 오류와 함께 2 로 종료. `--json` 과 조합 가능. |
-| `--format <human\|json\|github>` | `human` | 출력 형식. `github` 는 유령 **발생 위치마다** `::error` [workflow-command 주석](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) 한 줄을 출력한다(모든 위치, `--max-locations` 무시) 그리고 stderr 에 한 줄 요약. *CI* 참고. |
+| `--format <human\|json\|github\|sarif>` | `human` | 출력 형식. `github` 는 유령 **발생 위치마다** `::error` [workflow-command 주석](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) 한 줄을 출력한다(모든 위치, `--max-locations` 무시) 그리고 stderr 에 한 줄 요약. `sarif` 는 GitHub Code Scanning 용 [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) 로그를 출력한다 — 발생 위치마다 `result` 하나, 상한 없음. 둘 다 *CI* 참고. |
 | `--json` | 꺼짐 | `--format json` 의 별칭: stdout 에 기계가 읽을 수 있는 리포트 출력. 변경 없음. |
-| `--max-annotations <n>` | `50` | `github` 전용: 이 수만큼 주석을 출력하고 나머지는 `::notice::tw-ghost: K more annotations omitted` 한 줄로 접는다. `0` = 전부. |
+| `--max-annotations <n>` | `50` | `github` 전용: 이 수만큼 주석을 출력하고 나머지는 `::notice::tw-ghost: K more annotations omitted` 한 줄로 접는다. `0` = 전부. `sarif` 는 무시한다(SARIF 에는 표시 상한이 없다). |
 | `--unknown` | 꺼짐 | **유틸리티 모양** unknown 도 나열 — 기본 Tailwind 에서도 프로젝트에서도 CSS 가 안 나오지만 접두사가 Tailwind 유틸리티이고 값이 그 유틸리티가 받을 법한 모양인 클래스(`text-mm`, `px-13`, `rounded-xll`; 오타와 죽은 토큰). 등장 횟수, 그다음 이름순 정렬. 여기에 유틸리티는 동작하지만 variant 체인을 이 설정이 모르는 클래스(`unknownVariant`)도. 루트만 같은 식별자(`my-page`, `no-op`, `bottom-start`)는 보이지 않는다. |
 | `--unknown-all` | 꺼짐 | `--unknown` 과 함께: 유틸리티 모양 부분집합 대신 원시 unknown 토큰 전부를 나열 (extractor 가 본 모든 단어·식별자·URL — 실제 앱에서는 수만 줄). 정렬은 같다. |
 | `--max-locations <n>` | `3` | 클래스당 유지할 위치 수. `0` = 전부. 0 이상의 정수만 허용 (`3abc` 는 종료 코드 2 로 거부). |

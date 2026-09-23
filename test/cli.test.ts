@@ -252,6 +252,74 @@ describe('cli (dist/cli.js)', () => {
     expect(clean.stderr).toBe('tw-ghost: 0 ghost classes, 0 occurrences\n');
   });
 
+  it('--format sarif emits a SARIF 2.1.0 log, one result per occurrence, uncapped', () => {
+    const { code, stdout, stderr } = run(
+      // --max-locations and --max-annotations must not reach SARIF: it reports every occurrence.
+      ['--format', 'sarif', '--max-locations', '1', '--max-annotations', '1'],
+      fixture('replaced-scale'),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe(
+      'tw-ghost: 5 ghost classes, 8 occurrences \u2192 8 SARIF results in 1 run\n',
+    );
+    const log = JSON.parse(stdout);
+    expect(log.$schema).toBe('https://json.schemastore.org/sarif-2.1.0.json');
+    expect(log.version).toBe('2.1.0');
+    expect(log.runs).toHaveLength(1);
+    const [run0] = log.runs;
+    expect(run0.tool.driver).toMatchObject({
+      name: 'tw-ghost',
+      informationUri: 'https://github.com/changbaebang/tw-ghost#readme',
+    });
+    expect(run0.tool.driver.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(run0.tool.driver.rules.map((r: { id: string }) => r.id)).toEqual(['ghost-class']);
+    expect(run0.automationDetails).toBeUndefined();
+    // 8 occurrences = 8 results, the same total --format github annotates.
+    expect(run0.results).toHaveLength(8);
+    expect(run0.results[0]).toMatchObject({
+      ruleId: 'ghost-class',
+      ruleIndex: 0,
+      level: 'error',
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: 'src/App.tsx', uriBaseId: '%SRCROOT%' },
+            region: { startLine: 7, startColumn: 21, endColumn: 28 },
+          },
+        },
+      ],
+    });
+    expect(run0.results[0].message.text).toContain(
+      'text-sm produces no CSS in this Tailwind config (stock Tailwind: font-size: 0.875rem',
+    );
+    expect(Object.keys(run0.results[0].partialFingerprints)).toEqual(['twGhostClassV1']);
+    // Same class + file in two places ⇒ one fingerprint; a different class ⇒ a different one.
+    const fp = (i: number) => run0.results[i].partialFingerprints.twGhostClassV1;
+    expect(fp(0)).toBe(fp(1));
+    expect(fp(0)).not.toBe(run0.results.at(-1).partialFingerprints.twGhostClassV1);
+
+    const unknown = run(['--format', 'sarif', '--unknown'], fixture('replaced-scale'));
+    const unknownLog = JSON.parse(unknown.stdout);
+    expect(unknownLog.runs[0].tool.driver.rules.map((r: { id: string }) => r.id)).toEqual([
+      'ghost-class',
+      'unknown-utility-like',
+      'unknown-variant',
+    ]);
+    expect(
+      unknownLog.runs[0].results.some(
+        (r: { ruleId: string; level: string }) =>
+          r.ruleId === 'unknown-utility-like' && r.level === 'note',
+      ),
+    ).toBe(true);
+
+    const clean = run(['--format', 'sarif'], fixture('clean'));
+    expect(clean.code).toBe(0);
+    expect(JSON.parse(clean.stdout).runs[0].results).toEqual([]);
+    expect(clean.stderr).toBe(
+      'tw-ghost: 0 ghost classes, 0 occurrences \u2192 0 SARIF results in 1 run\n',
+    );
+  });
+
   it('--json is an alias for --format json; bad --format / --max-annotations exit 2', () => {
     const a = run(['--json'], fixture('replaced-scale'));
     const b = run(['--format', 'json'], fixture('replaced-scale'));
@@ -492,6 +560,47 @@ describe('cli: several configs with --format github', () => {
         .filter((l) => l.startsWith('::error ')).length,
     ).toBe(1);
     expect(capped.stdout).toMatch(/::notice::tw-ghost: \d+ more annotations omitted/);
+  });
+});
+
+describe('cli: several configs with --format sarif', () => {
+  it('emits one run per config, each with its own automationDetails id and repo-relative uris', () => {
+    const { code, stdout, stderr } = run(
+      ['--all-configs', '--format', 'sarif', '--no-suggestions'],
+      fixture('monorepo'),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe(
+      'tw-ghost: 4 ghost classes, 4 occurrences across 2 configs \u2192 4 SARIF results in 2 runs\n',
+    );
+    const log = JSON.parse(stdout);
+    expect(log.version).toBe('2.1.0');
+    expect(log.runs).toHaveLength(2);
+    expect(
+      log.runs.map((r: { automationDetails: { id: string } }) => r.automationDetails.id),
+    ).toEqual(['tw-ghost/apps/admin/tailwind.config.js', 'tw-ghost/apps/web/tailwind.config.ts']);
+    // Every uri is relative to the monorepo root the CLI ran in, not to each config's folder.
+    const uris = log.runs.flatMap(
+      (r: {
+        results: Array<{
+          locations: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>;
+        }>;
+      }) => r.results.map((x) => x.locations[0]?.physicalLocation.artifactLocation.uri),
+    );
+    expect(uris).toEqual([
+      'packages/shared/src/Button.tsx',
+      'apps/admin/src/Page.tsx',
+      'apps/web/src/Page.tsx',
+      'packages/shared/src/Button.tsx',
+    ]);
+    // The shared file is a ghost under both configs, for a different class each time.
+    const classes = log.runs.map((r: { results: Array<{ message: { text: string } }> }) =>
+      r.results.map((x) => x.message.text.split(' ')[0]),
+    );
+    expect(classes).toEqual([
+      ['p-2', 'p-3'],
+      ['text-sm', 'text-xs'],
+    ]);
   });
 });
 
