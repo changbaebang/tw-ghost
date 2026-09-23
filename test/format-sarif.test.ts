@@ -340,11 +340,41 @@ describe('formatSarifMany: one run per config', () => {
       opts,
     );
     expect(log.runs).toHaveLength(1);
-    // A lone run carries no id either way, so `category:` still names it.
-    expect(log.runs[0]?.automationDetails).toBeUndefined();
+    // The survivor keeps its own id. Deriving it from the number of successes would rename it the
+    // moment a sibling broke, and Code Scanning reads a rename as a different analysis.
+    expect(log.runs[0]?.automationDetails?.id).toBe('tw-ghost/apps/web/tailwind.config.ts');
     expect(summary).toBe(
       'tw-ghost: 1 ghost class, 2 occurrences across 1 config → 2 SARIF results in 1 run',
     );
+  });
+
+  it("keeps a surviving run's id identical across a sibling config failing and recovering", () => {
+    const web = {
+      config: 'apps/web/tailwind.config.ts',
+      ...report({ ghosts: [ghost('text-sm', [['apps/web/src/Page.tsx', 1, 30]])] }),
+    };
+    const admin = {
+      config: 'apps/admin/tailwind.config.js',
+      ...report({ ghosts: [ghost('p-3', [['apps/admin/src/Page.tsx', 1, 30]])] }),
+    };
+    const broken = { config: 'apps/admin/tailwind.config.js', error: 'boom' };
+
+    const ids = (entries: MultiReport['configs']): (string | undefined)[] =>
+      formatSarifMany(multi(entries), opts).log.runs.map((r) => r.automationDetails?.id);
+
+    // 2 successes -> admin breaks -> admin recovers. `web` must never be renamed: it did not change,
+    // and a renamed analysis retires its alerts and opens them again as new.
+    const before = ids([web, admin]);
+    const during = ids([web, broken]);
+    const after = ids([web, admin]);
+
+    expect(before).toEqual([
+      'tw-ghost/apps/web/tailwind.config.ts',
+      'tw-ghost/apps/admin/tailwind.config.js',
+    ]);
+    expect(during).toEqual(['tw-ghost/apps/web/tailwind.config.ts']);
+    expect(after).toEqual(before);
+    expect(during[0]).toBe(before[0]);
   });
 
   it('is a valid log with no runs when every config failed', () => {

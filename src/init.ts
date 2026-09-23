@@ -269,8 +269,31 @@ export function renderWorkflow(options: WorkflowOptions): string {
   const permissions = sarif
     ? 'permissions:\n  contents: read\n  security-events: write # upload-sarif\n'
     : 'permissions:\n  contents: read\n';
+  // Which exit codes may become a code-scanning baseline. 1 is "ghosts found" — the scan finished,
+  // so the log is complete and uploading it is the point of the job. 2 is "tw-ghost could not
+  // finish" (a config failed to load): that config contributes no run, and uploading the remainder
+  // would retire its existing alerts as though its classes had been fixed. Any other code is
+  // unexplained, so the gate lists what may upload instead of using `if: always()`.
+  const uploadIf =
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: `${{ }}` is the Actions expression syntax
+    "${{ !cancelled() && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1') }}";
   const analyzeStep = sarif
-    ? `      # SARIF goes to a file; ghosts still make this step exit 1.\n      - run: ${run} --format sarif${configArg} > tw-ghost.sarif\n      - if: always() # upload the findings even when the step above failed\n        uses: ${ACTIONS.uploadSarif}\n        with:\n          sarif_file: tw-ghost.sarif\n          category: tw-ghost\n`
+    ? [
+        '      # SARIF goes to a file. Ghosts still fail the job; `code` decides whether the partial',
+        '      # log may be uploaded (exit 2 = a config failed to load, so it may not).',
+        '      - id: scan',
+        '        run: |',
+        '          code=0',
+        `          ${run} --format sarif${configArg} > tw-ghost.sarif || code=$?`,
+        '          echo "code=$code" >> "$GITHUB_OUTPUT"',
+        '          exit "$code"',
+        `      - if: ${uploadIf}`,
+        `        uses: ${ACTIONS.uploadSarif}`,
+        '        with:',
+        '          sarif_file: tw-ghost.sarif',
+        '          category: tw-ghost',
+        '',
+      ].join('\n')
     : `      - run: ${run} --format github${configArg}\n`;
   return `# Written by tw-ghost ${VERSION} (\`tw-ghost init\`).
 # Fails the check when a Tailwind class in this project produces no CSS.

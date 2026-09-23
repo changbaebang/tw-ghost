@@ -343,25 +343,32 @@ export function formatSarif(report: Report, options: SarifFormatOptions = {}): S
  *
  * The same class can be a ghost under one config and perfectly fine under another, so merging
  * every config into one run would lose the only thing that explains the verdict. Code Scanning
- * renders runs separately, so one run per config keeps that split visible. With several runs each
- * carries `automationDetails.id = "tw-ghost/<config>"`; a lone run carries none so that
- * `upload-sarif`'s `category:` still names it.
+ * renders runs separately, so one run per config keeps that split visible.
+ *
+ * **Every** run carries `automationDetails.id = "tw-ghost/<config>"`, including when it is the only
+ * one left. Code Scanning keys an analysis by that id: deriving it from how many configs *succeeded*
+ * would rename the survivors the moment a sibling config broke, and GitHub would read the rename as
+ * a different analysis — retiring and re-opening the alerts of a config that never changed, exactly
+ * when the scan is least trustworthy. The id names which config a run came from, which is a
+ * property of the request, not of the outcome.
+ *
+ * The single-config path (`formatSarif`) still emits no `automationDetails`, so `upload-sarif`'s
+ * `category:` names it: the action fills `automationDetails` only when it is absent
+ * (`populateRunAutomationDetails`), so it never overwrites the ids set here.
  *
  * Configs that failed to load are not runs — they have no findings to report. They are already on
- * stderr and already force exit 2.
+ * stderr and already force exit 2, which is what gates the upload.
  */
 export function formatSarifMany(
   multi: MultiReport,
   options: SarifFormatOptions = {},
 ): SarifFormatResult {
   const reports = multi.configs.filter((e): e is ConfigReport => !isConfigFailure(e));
-  const label = reports.length > 1;
   const runs = reports.map((entry) =>
-    buildRun(
-      entry,
-      sarifRules(options.unknown === true),
-      label ? { ...options, automationId: `${SARIF_TOOL_NAME}/${entry.config}` } : options,
-    ),
+    buildRun(entry, sarifRules(options.unknown === true), {
+      ...options,
+      automationId: `${SARIF_TOOL_NAME}/${entry.config}`,
+    }),
   );
   const ghosts = reports.reduce((n, entry) => n + entry.ghosts.length, 0);
   const occurrences = reports.reduce((n, entry) => n + occurrencesOf(entry), 0);

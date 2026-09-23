@@ -602,6 +602,30 @@ describe('cli: several configs with --format sarif', () => {
       ['text-sm', 'text-xs'],
     ]);
   });
+
+  it('keeps every run id across exit 0, 1 and 2, including when a sibling config fails', () => {
+    const monorepo = fixture('monorepo');
+    const ids = (args: string[]): { code: number | null; ids: string[] } => {
+      const { code, stdout } = run(['--all-configs', '--format', 'sarif', ...args], monorepo);
+      const log = JSON.parse(stdout);
+      return {
+        code,
+        ids: log.runs.map((r: { automationDetails: { id: string } }) => r.automationDetails.id),
+      };
+    };
+    const both = ['tw-ghost/apps/admin/tailwind.config.js', 'tw-ghost/apps/web/tailwind.config.ts'];
+
+    // Exit 1: ghosts found, the scan finished. This log may become the baseline.
+    expect(ids(['--no-suggestions'])).toEqual({ code: 1, ids: both });
+    // Exit 0: same scan, ghosts not treated as a failure. Same identities.
+    expect(ids(['--no-suggestions', '--fail-on', 'none'])).toEqual({ code: 0, ids: both });
+    // Exit 2: a third config fails to load. The two that did run keep the ids they had at exit 1 —
+    // the workflow refuses to upload this log, but if it ever did, it would not rename them.
+    expect(ids(['--config', '../broken-config/tailwind.config.js', '--no-suggestions'])).toEqual({
+      code: 2,
+      ids: both,
+    });
+  });
 });
 
 describe('cli --fix-map round trip', () => {

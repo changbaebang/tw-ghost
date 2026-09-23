@@ -198,7 +198,8 @@ describe('renderWorkflow', () => {
     const sarif = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: true });
     expect(sarif).toContain('security-events: write');
     expect(sarif).toContain('upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff');
-    expect(sarif).toContain('if: always()');
+    // `if: always()` would upload an incomplete log too — see the gating test below.
+    expect(sarif).not.toContain('if: always()');
 
     const gh = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: false });
     expect(gh).not.toContain('security-events');
@@ -211,6 +212,33 @@ describe('renderWorkflow', () => {
     });
     expect(nested).toContain("TW_GHOST_CONFIG: 'apps/web/tailwind.config.ts'");
     expect(nested).toContain('--config "$TW_GHOST_CONFIG"');
+  });
+
+  it('uploads SARIF for exit 0 and 1 but not for exit 2, and still fails the job on 1', () => {
+    const yml = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: true });
+
+    // The scan records its own exit code and then re-raises it, so ghosts (exit 1) still turn the
+    // check red. Without `|| code=$?` the default `bash -e` would abort before the output is written.
+    const run = yml.match(/^ {8}run: \|\n((?: {10}.*\n)+)/m)?.[1] ?? '';
+    expect(
+      run
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean),
+    ).toEqual([
+      'code=0',
+      'npx tw-ghost@0.3.0 --format sarif > tw-ghost.sarif || code=$?',
+      'echo "code=$code" >> "$GITHUB_OUTPUT"',
+      'exit "$code"',
+    ]);
+
+    // The gate names the codes that may become a baseline, so 2 (incomplete) cannot. `!cancelled()`
+    // rather than `always()`: it must run when the scan failed with 1, but not when the job was
+    // cancelled and the log may be truncated.
+    expect(yml.match(/^ {6}- if: (.+)$/m)?.[1]).toBe(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the Actions expression, verbatim
+      "${{ !cancelled() && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1') }}",
+    );
   });
 });
 

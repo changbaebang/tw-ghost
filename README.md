@@ -257,13 +257,44 @@ another, so a single merged run would throw away the only thing that explains th
 scanning renders runs separately, which keeps that split visible. Every `uri` stays relative to the
 repository root rather than to each config's folder, so a shared package flagged by two apps points
 at the same file both times. A config that failed to load contributes no run — it is already on
-stderr and already forces exit `2`. Two notes:
+stderr and already forces exit `2`. Three notes:
 
-- a single run carries **no** `automationDetails`, so `upload-sarif`'s `category:` names it as
-  documented; the per-config ids only appear once there is more than one run;
+- **the id does not depend on how many configs succeeded.** Every run of a multi-config log is
+  named, including the last one standing. Code scanning keys an analysis by that id, so deriving it
+  from the success count would rename the survivors the moment a sibling config broke, and GitHub
+  would read the rename as a different analysis — retiring and re-opening the alerts of a config
+  that never changed, exactly when the scan is least trustworthy;
+- a **single-config** run (a plain `--config`, or auto-detection) carries no `automationDetails`, so
+  `upload-sarif`'s `category:` names it. That is the action filling a gap, not overriding: it sets
+  `automationDetails` only when a run has none, so the per-config ids above always survive an
+  upload;
 - GitHub accepts [at most 20 runs per SARIF file](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit),
   so a repository with more than 20 Tailwind configs needs more than one upload (run tw-ghost per
   config group and give each upload its own `category:`).
+
+**An incomplete scan must not become a baseline.** Exit `1` means ghosts were found and the scan
+finished, so that log is complete and uploading it is the point of the job. Exit `2` means tw-ghost
+could not finish — a config failed to load, and its runs are simply absent. Uploading that log would
+retire the missing configs' alerts as though their classes had been fixed. The workflow written by
+`tw-ghost init` therefore gates the upload on the exit code instead of `if: always()`:
+
+```yaml
+- id: scan
+  run: |
+    code=0
+    npx tw-ghost@VERSION --format sarif > tw-ghost.sarif || code=$?
+    echo "code=$code" >> "$GITHUB_OUTPUT"
+    exit "$code"
+- if: ${{ !cancelled() && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1') }}
+  uses: github/codeql-action/upload-sarif@<sha>
+  with:
+    sarif_file: tw-ghost.sarif
+    category: tw-ghost
+```
+
+`|| code=$?` keeps the default `bash -e` from aborting before the code is recorded, and `exit
+"$code"` re-raises it so ghosts still fail the check. The gate lists the codes that may upload, so
+an exit code nobody anticipated does not upload either.
 
 A one-line summary
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`) goes to stderr, since
