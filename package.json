@@ -22,7 +22,10 @@
     "theme",
     "design-tokens",
     "ci",
-    "static-analysis"
+    "static-analysis",
+    "eslint",
+    "eslint-plugin",
+    "eslintplugin"
   ],
   "type": "module",
   "packageManager": "pnpm@8.15.0",
@@ -45,6 +48,11 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./eslint": {
+      "types": "./dist/eslint.d.ts",
+      "import": "./dist/eslint.js",
+      "require": "./dist/eslint.cjs"
     },
     "./package.json": "./package.json"
   },

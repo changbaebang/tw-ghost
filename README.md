@@ -65,11 +65,10 @@ inherits, and nobody notices until a designer asks why the padding is off.
 
 **Does not**
 
-- Replace an ESLint rule. [eslint-plugin-tailwindcss](https://github.com/francoismassart/eslint-plugin-tailwindcss)
+- Infer validity from the config shape. [eslint-plugin-tailwindcss](https://github.com/francoismassart/eslint-plugin-tailwindcss)
   (`no-custom-classname`) and [eslint-plugin-better-tailwindcss](https://github.com/schoero/eslint-plugin-better-tailwindcss)
-  (`no-unknown-classes`) give you editor feedback while typing. They are ESLint-bound and infer
-  validity from the config; tw-ghost is linter-independent (works for Biome / oxlint teams) and
-  judges by actual CSS output. Use both if you can.
+  (`no-unknown-classes`) do; tw-ghost judges by actual CSS output, both in the CLI and in its own ESLint rule
+  (`tw-ghost/no-ghost-class`, see *ESLint*). The CLI stays linter-independent for Biome / oxlint teams.
 - Detect classes built dynamically at runtime (`` `text-${size}` ``). Tailwind cannot see those
   either — they are broken in production already, not just in this report.
 - Support Tailwind v4 (CSS-first config, no `tailwind.config.js`) or Tailwind older than 3.3. It exits
@@ -127,6 +126,54 @@ Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
 so a plain `tailwindcss` install is enough. Not sure it fits your setup? Run `npx tw-ghost --env`
 — it either prints what it resolved or fails with the exact reason (exit 2).
+
+### ESLint
+
+The same verdicts, in the editor, while typing. tw-ghost ships an ESLint plugin as a subpath — no extra
+package, no ESLint dependency of its own (ESLint ≥ 9, flat config):
+
+```js
+// eslint.config.js
+import twGhost from 'tw-ghost/eslint';
+
+export default [
+  // …your existing config…
+  twGhost.configs.recommended, // rule `tw-ghost/no-ghost-class` as "error"
+];
+```
+
+```jsx
+<div className="text-sm p-3" />
+//              ~~~~~~~ `text-sm` produces no CSS in this Tailwind config
+//                      (stock Tailwind would set font-size: 0.875rem; line-height: 1.25rem).
+```
+
+What the rule looks at: string literals and template-literal text in `className` / `class` attributes
+(also inside `cond ? 'a' : 'b'`, `cond && 'a'`, arrays, and the keys of `{ 'a': cond }`), and the arguments
+of `clsx`, `cx`, `cn`, `classnames`, `cva`, `tv`, `twMerge`, `twJoin` (`callees` option). Dynamic pieces
+(`` `text-${size}` ``) are skipped, as Tailwind itself skips them. Each class is judged by the project's own
+`tailwindcss` through its JIT engine synchronously — the config is loaded once per `tailwind.config.*`
+(found by walking up from the linted file, or set with `config`) and re-loaded when its mtime changes.
+
+Options (all optional):
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `config` | nearest `tailwind.config.*` above the file | Path to the config (relative to the ESLint cwd). |
+| `callees` | `clsx, cx, cn, classnames, classNames, cva, tv, twMerge, twJoin` | Functions whose string arguments hold classes. |
+| `attributes` | `className, class` | JSX attributes to scan. |
+| `ignore` | `[]` | Regexes; matching classes are skipped. |
+| `reportUnknownVariant` | `false` | Also report `unknown-variant` (valid utility under a variant this config does not know). |
+| `reportUnknown` | `false` | Also report utility-looking classes that produce no CSS anywhere (typos). Noisy; prefer `--unknown` in the CLI. |
+
+Setup problems are reported once per file as a lint message (`tw-ghost could not load the Tailwind config: …`,
+`tw-ghost found no tailwind.config.*…`) instead of crashing the lint run. The CLI's `--fix-map` is the way to
+fix findings in bulk; the rule has no autofix because the replacement is a design decision (see *Fixing ghosts*).
+
+**How this differs from `eslint-plugin-tailwindcss`.** That plugin infers validity from the config object;
+this rule asks Tailwind's engine whether the class *generates CSS* in your config and in stock Tailwind, so a
+replaced scale (`fontSize` without `sm`) is a finding and a custom plugin utility is not. Biome / oxlint users
+keep the CLI; there is no plugin API to hook into there.
 
 ### Monorepos
 
