@@ -219,7 +219,14 @@ export interface WorkflowOptions {
   sarif: boolean;
 }
 
-/** Quote a value as a YAML single-quoted scalar. */
+/**
+ * Quote a value as a YAML single-quoted scalar.
+ *
+ * Applied unconditionally, including to branch names: `git check-ref-format --branch` accepts
+ * `release,2026`, `feat#1`, `a{b}` and `o'brien`, and bare in a flow sequence those parse as two
+ * items, as null, or not at all. Deciding per value which names are YAML-safe is the bug this
+ * avoids — only a space and `*` are actually rejected by git.
+ */
 function yamlSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -272,7 +279,7 @@ name: tw-ghost
 
 on:
   push:
-    branches: [${branch}]${branchNote}
+    branches: [${yamlSingleQuote(branch)}]${branchNote}
   pull_request:
 
 ${permissions}

@@ -164,7 +164,7 @@ describe('renderWorkflow', () => {
 
   it('filters push on the given branch, and says so when it had to guess', () => {
     const guessed = renderWorkflow({ info: { manager: 'npm', hasTailwind: true }, sarif: false });
-    expect(guessed).toContain('branches: [main]');
+    expect(guessed).toContain("branches: ['main']");
     expect(guessed).toContain('not detected');
 
     const trunk = renderWorkflow({
@@ -172,8 +172,26 @@ describe('renderWorkflow', () => {
       sarif: false,
       branch: 'trunk',
     });
-    expect(trunk).toContain('branches: [trunk]');
+    expect(trunk).toContain("branches: ['trunk']");
     expect(trunk).not.toContain('not detected');
+  });
+
+  it('quotes branch names that git allows but a bare YAML sequence would mangle', () => {
+    const branchLine = (branch: string): string => {
+      const yml = renderWorkflow({
+        info: { manager: 'npm', hasTailwind: true },
+        sarif: false,
+        branch,
+      });
+      return yml.match(/^ +branches: .*$/m)?.[0] ?? '';
+    };
+    // `git check-ref-format --branch` accepts all of these. Bare, the first splits into two items,
+    // the second becomes null, and the third fails to parse at all.
+    expect(branchLine('release,2026')).toContain("branches: ['release,2026']");
+    expect(branchLine('null')).toContain("branches: ['null']");
+    expect(branchLine('a{b}')).toContain("branches: ['a{b}']");
+    // A single quote is doubled for the scalar, not escaped for a shell.
+    expect(branchLine("o'brien")).toContain("branches: ['o''brien']");
   });
 
   it('asks for security-events only with sarif, and passes --config when it is nested', () => {
