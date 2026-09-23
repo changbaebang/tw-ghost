@@ -39,6 +39,22 @@ describe('resolveConfigPaths', () => {
     ]);
   });
 
+  // Same story as positional globs: `apps\*\tailwind.config.*` is not even recognised as a glob
+  // when the backslashes survive, so it would be resolved as a literal (missing) file path.
+  it.runIf(process.platform === 'win32')(
+    'accepts Windows separators in --config globs',
+    async () => {
+      const paths = await resolveConfigPaths({
+        cwd: monorepo,
+        configs: ['apps\\*\\tailwind.config.*'],
+      });
+      expect(paths).toEqual([
+        path.join(monorepo, 'apps/admin/tailwind.config.js'),
+        path.join(monorepo, 'apps/web/tailwind.config.ts'),
+      ]);
+    },
+  );
+
   it('throws when a glob matches nothing', async () => {
     await expect(
       resolveConfigPaths({ cwd: monorepo, configs: ['nope/*/tailwind.config.js'] }),
