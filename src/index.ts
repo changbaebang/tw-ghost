@@ -42,12 +42,10 @@ export {
 } from './format-github.js';
 export {
   automationIdFor,
-  classFingerprint,
   encodeUriPath,
   formatSarif,
   formatSarifMany,
   GHOST_RULE_ID,
-  SARIF_FINGERPRINT_KEY,
   SARIF_MAX_SUGGESTIONS,
   SARIF_SCHEMA_URI,
   SARIF_TOOL_NAME,

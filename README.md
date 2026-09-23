@@ -219,7 +219,6 @@ The log looks like this, trimmed to one result:
               }
             }
           ],
-          "partialFingerprints": { "twGhostClassV1": "540c65051ed1cc37" }
         }
       ]
     }
@@ -240,10 +239,22 @@ The log looks like this, trimmed to one result:
   becomes `%20`, `#` becomes `%23`), under `uriBaseId: "%SRCROOT%"`. Paths are relative to
   `GITHUB_WORKSPACE` when the file lives under it, else to the current directory — the same rule
   `--format github` uses for `file=`. No absolute path from the build machine reaches the log.
-- **`partialFingerprints.twGhostClassV1`** is a SHA-256 of `class + file` (16 hex characters). It
-  deliberately leaves the line and column out, so moving code does not retire an alert and open a
-  new one in its place. Two occurrences of one class in one file therefore share a fingerprint,
-  which is what a *partial* fingerprint is for — the location completes the identity.
+- **No `partialFingerprints`.** Code scanning reads exactly one partial fingerprint,
+  [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object),
+  and `upload-sarif` computes it from the checked-out source for every result that has none. So
+  tw-ghost emits none and lets the action supply the key that is actually consumed. A custom key of
+  its own would be carried in the log and ignored by GitHub, which is worse than absent: it reads as
+  a tracking guarantee that nothing honours.
+  What the action needs in exchange is a `uri` it can turn back into a file: its `resolveUriToFile`
+  ignores `uriBaseId`, decodes the percent-encoding and joins a relative path onto the source root,
+  so the URIs above work because they are **repo-relative**, not because of `%SRCROOT%` (that is for
+  display). A test asserts every emitted `uri` still resolves that way — if it stopped, the action
+  would skip fingerprinting silently.
+  Measured by uploading a log with 13 `ghost-class` findings in one file (five on one line, six on
+  byte-identical lines, two more), covering 9 distinct `primaryLocationLineHash` values:
+  **13 findings became 13 alerts** — an alert is one result, so several ghosts on one line are not
+  collapsed — and moving the whole block down five lines without editing it kept **all 13 alert
+  numbers, with nothing opened and nothing retired**.
 - **Rules are declared for what the run can produce.** `ghost-class` (level `error`) always;
   `unknown-utility-like` and `unknown-variant` (both level `note`, so they do not raise the alert
   severity) only with `--unknown`, which is also the only way their results appear. The schema

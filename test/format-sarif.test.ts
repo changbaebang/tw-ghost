@@ -1,13 +1,12 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Finding, GhostFinding, Report } from '../src/analyze.js';
+import { analyze, type Finding, type GhostFinding, type Report } from '../src/analyze.js';
 import {
-  classFingerprint,
   encodeUriPath,
   formatSarif,
   formatSarifMany,
   GHOST_RULE_ID,
-  SARIF_FINGERPRINT_KEY,
   SARIF_SCHEMA_URI,
   SARIF_URI_BASE_ID,
   SARIF_VERSION,
@@ -18,6 +17,7 @@ import {
   UNKNOWN_VARIANT_RULE_ID,
 } from '../src/format-sarif.js';
 import type { MultiReport } from '../src/multi.js';
+import { fixture } from './helpers.js';
 
 const ghost = (
   cls: string,
@@ -109,7 +109,6 @@ describe('formatSarif: the whole log for a small report', () => {
             },
           },
         ],
-        partialFingerprints: { twGhostClassV1: classFingerprint('text-sm', 'src/App.tsx') },
       },
     ]);
   });
@@ -242,9 +241,6 @@ describe('artifactLocation.uri encoding', () => {
       uri: 'src/my%20components/a%231.tsx',
       uriBaseId: SARIF_URI_BASE_ID,
     });
-    expect(result?.partialFingerprints[SARIF_FINGERPRINT_KEY]).toBe(
-      classFingerprint('p-3', 'src/my components/a#1.tsx'),
-    );
   });
 
   it('is repo-relative when the scan ran in a subdirectory of GITHUB_WORKSPACE', () => {
@@ -257,24 +253,47 @@ describe('artifactLocation.uri encoding', () => {
   });
 });
 
-describe('partialFingerprints.twGhostClassV1', () => {
-  it('is stable for the same class + file and different for a different class', () => {
-    const a = classFingerprint('text-sm', 'src/App.tsx');
-    expect(classFingerprint('text-sm', 'src/App.tsx')).toBe(a);
-    expect(classFingerprint('text-smm', 'src/App.tsx')).not.toBe(a);
-    expect(classFingerprint('text-sm', 'src/Other.tsx')).not.toBe(a);
-    expect(a).toMatch(/^[0-9a-f]{16}$/);
+describe('partialFingerprints', () => {
+  // Code scanning consumes exactly one partial fingerprint, `primaryLocationLineHash`, and
+  // `upload-sarif` computes it from the checked-out source when a result has none. A custom key of
+  // our own would ride along in the log and be ignored, reading as a tracking guarantee nothing
+  // honours. Emitting nothing is what makes the action fill in the key that is actually read.
+  it('emits no partial fingerprints, leaving the supported key to upload-sarif', () => {
+    const r = report({
+      ghosts: [
+        ghost('p-3', [
+          ['src/App.tsx', 7, 1],
+          ['src/App.tsx', 9, 1],
+        ]),
+      ],
+    });
+    for (const result of formatSarif(r, opts).log.runs[0]?.results ?? []) {
+      expect(result).not.toHaveProperty('partialFingerprints');
+    }
   });
 
-  it('cannot be forged by moving the split between class and file', () => {
-    expect(classFingerprint('a', 'b/c')).not.toBe(classFingerprint('a/b', 'c'));
-  });
+  // What the action needs from us in exchange: a `uri` it can turn back into a file on disk. Its
+  // `resolveUriToFile` ignores `uriBaseId` entirely — it decodes the percent-encoding and joins a
+  // relative path onto the source root — so our URIs work because they are repo-relative, not
+  // because of `%SRCROOT%`. If that ever stopped holding, the action would silently skip
+  // fingerprinting and every alert would be tracked by location alone.
+  it('emits uris that resolve to real files the way upload-sarif resolves them', async () => {
+    const root = fixture('replaced-scale');
+    const analyzed = await analyze({ cwd: root, suggestions: false });
+    const results = formatSarif(analyzed, { cwd: root }).log.runs[0]?.results ?? [];
+    expect(results.length).toBeGreaterThan(0);
 
-  it('survives two runs of the same finding on a different line', () => {
-    const at = (line: number) =>
-      formatSarif(report({ ghosts: [ghost('p-3', [['src/App.tsx', line, 1]])] }), opts).log.runs[0]
-        ?.results[0]?.partialFingerprints[SARIF_FINGERPRINT_KEY];
-    expect(at(7)).toBe(at(120));
+    for (const result of results) {
+      const { uri, uriBaseId } = result.locations[0]?.physicalLocation.artifactLocation ?? {};
+      expect(uriBaseId).toBe(SARIF_URI_BASE_ID);
+      expect(uri).toBeDefined();
+      const decoded = decodeURIComponent(uri ?? '');
+      // Neither absolute nor escaping the root: `resolveUriToFile` drops both.
+      expect(path.posix.isAbsolute(decoded)).toBe(false);
+      expect(decoded.startsWith('../')).toBe(false);
+      expect(decoded).not.toContain('://');
+      expect(existsSync(path.join(root, decoded))).toBe(true);
+    }
   });
 });
 
@@ -486,24 +505,13 @@ describe('SARIF 2.1.0 schema contract', () => {
     expect(results.length).toBeGreaterThan(0);
     for (const run of log.runs) {
       for (const result of run.results) {
-        expect(keys(result)).toEqual([
-          'level',
-          'locations',
-          'message',
-          'partialFingerprints',
-          'ruleId',
-          'ruleIndex',
-        ]);
+        expect(keys(result)).toEqual(['level', 'locations', 'message', 'ruleId', 'ruleIndex']);
         expect(keys(result.message)).toEqual(['text']);
         expect(typeof result.message.text).toBe('string');
         expect(LEVELS).toContain(result.level);
         expect(Number.isInteger(result.ruleIndex)).toBe(true);
         expect(result.ruleIndex).toBeGreaterThanOrEqual(-1); // schema minimum
         expect(run.tool.driver.rules[result.ruleIndex]?.id).toBe(result.ruleId);
-        // partialFingerprints: object of string → string
-        for (const value of Object.values(result.partialFingerprints)) {
-          expect(typeof value).toBe('string');
-        }
       }
     }
   });

@@ -292,11 +292,9 @@ describe('cli (dist/cli.js)', () => {
     expect(run0.results[0].message.text).toContain(
       'text-sm produces no CSS in this Tailwind config (stock Tailwind: font-size: 0.875rem',
     );
-    expect(Object.keys(run0.results[0].partialFingerprints)).toEqual(['twGhostClassV1']);
-    // Same class + file in two places ⇒ one fingerprint; a different class ⇒ a different one.
-    const fp = (i: number) => run0.results[i].partialFingerprints.twGhostClassV1;
-    expect(fp(0)).toBe(fp(1));
-    expect(fp(0)).not.toBe(run0.results.at(-1).partialFingerprints.twGhostClassV1);
+    // No `partialFingerprints` at all: code scanning reads only `primaryLocationLineHash`, and
+    // `upload-sarif` computes that from the source when a result carries none.
+    expect(run0.results.every((r: object) => !('partialFingerprints' in r))).toBe(true);
 
     const unknown = run(['--format', 'sarif', '--unknown'], fixture('replaced-scale'));
     const unknownLog = JSON.parse(unknown.stdout);
