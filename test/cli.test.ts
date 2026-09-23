@@ -626,6 +626,38 @@ describe('cli: several configs with --format sarif', () => {
       ids: both,
     });
   });
+
+  it('names a multi-config request that matched only one config, identically to the multi run', () => {
+    const monorepo = fixture('monorepo');
+    const idsOf = (args: string[], cwd = monorepo): (string | undefined)[] =>
+      JSON.parse(
+        run([...args, '--format', 'sarif', '--no-suggestions', '--fail-on', 'none'], cwd).stdout,
+      ).runs.map((r: { automationDetails?: { id: string } }) => r.automationDetails?.id);
+
+    // The id `web` gets when a sibling config exists...
+    const withSibling = idsOf(['--all-configs']);
+    expect(withSibling).toEqual([
+      'tw-ghost/apps/admin/tailwind.config.js',
+      'tw-ghost/apps/web/tailwind.config.ts',
+    ]);
+    // ...must be byte-identical to the id it gets when the request matches only `web`. Otherwise
+    // adding or deleting a sibling renames the config that did not change.
+    expect(idsOf(['--config', 'apps/web/tailwind.config.*'])).toEqual([
+      'tw-ghost/apps/web/tailwind.config.ts',
+    ]);
+
+    // `--all-configs` in a single-config project is still a multi request, so it is still named.
+    expect(idsOf(['--all-configs'], fixture('replaced-scale'))).toEqual([
+      'tw-ghost/tailwind.config.ts',
+    ]);
+
+    // A plain `--config <path>` and auto-detection are single-config requests: they stay unnamed so
+    // that `upload-sarif`'s `category:` names them, which is a documented contract.
+    expect(idsOf(['--config', 'tailwind.config.ts'], fixture('replaced-scale'))).toEqual([
+      undefined,
+    ]);
+    expect(idsOf([], fixture('replaced-scale'))).toEqual([undefined]);
+  });
 });
 
 describe('cli --fix-map round trip', () => {

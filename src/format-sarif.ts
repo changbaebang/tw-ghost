@@ -339,6 +339,17 @@ export function formatSarif(report: Report, options: SarifFormatOptions = {}): S
 }
 
 /**
+ * `automationDetails.id` for a run that analyzed `config` (a path relative to the shared cwd, as
+ * {@link ConfigReport.config} and `configLabel` produce it).
+ *
+ * Both multi-config paths must produce the same string for the same config — see
+ * {@link formatSarifMany}.
+ */
+export function automationIdFor(config: string): string {
+  return `${SARIF_TOOL_NAME}/${config}`;
+}
+
+/**
  * A SARIF 2.1.0 log with **one run per config** (`--all-configs`, repeated `--config`).
  *
  * The same class can be a ghost under one config and perfectly fine under another, so merging
@@ -351,6 +362,12 @@ export function formatSarif(report: Report, options: SarifFormatOptions = {}): S
  * a different analysis — retiring and re-opening the alerts of a config that never changed, exactly
  * when the scan is least trustworthy. The id names which config a run came from, which is a
  * property of the request, not of the outcome.
+ *
+ * The same reasoning reaches past this function: a multi-config *request* that happens to match one
+ * config is routed to {@link formatSarif} by the CLI, which passes the id from
+ * {@link automationIdFor} so that adding or deleting a sibling config does not rename the one that
+ * stayed. Use that helper rather than rebuilding the string — the two paths must agree byte for
+ * byte, or the rename they exist to prevent happens anyway.
  *
  * The single-config path (`formatSarif`) still emits no `automationDetails`, so `upload-sarif`'s
  * `category:` names it: the action fills `automationDetails` only when it is absent
@@ -367,7 +384,7 @@ export function formatSarifMany(
   const runs = reports.map((entry) =>
     buildRun(entry, sarifRules(options.unknown === true), {
       ...options,
-      automationId: `${SARIF_TOOL_NAME}/${entry.config}`,
+      automationId: automationIdFor(entry.config),
     }),
   );
   const ghosts = reports.reduce((n, entry) => n + entry.ghosts.length, 0);

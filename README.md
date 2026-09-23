@@ -259,12 +259,14 @@ repository root rather than to each config's folder, so a shared package flagged
 at the same file both times. A config that failed to load contributes no run — it is already on
 stderr and already forces exit `2`. Three notes:
 
-- **the id does not depend on how many configs succeeded.** Every run of a multi-config log is
-  named, including the last one standing. Code scanning keys an analysis by that id, so deriving it
-  from the success count would rename the survivors the moment a sibling config broke, and GitHub
-  would read the rename as a different analysis — retiring and re-opening the alerts of a config
-  that never changed, exactly when the scan is least trustworthy;
-- a **single-config** run (a plain `--config`, or auto-detection) carries no `automationDetails`, so
+- **the id depends on the request, not on a count.** Not on how many configs succeeded, and not on
+  how many were found: `--all-configs`, a glob and a repeated `--config` are multi-config requests
+  and get per-config ids even when only one config matches. Code scanning keys an analysis by that
+  id, so deriving it from either count would rename the survivor the moment a sibling config broke
+  or was deleted, and GitHub would read the rename as a different analysis — retiring and re-opening
+  the alerts of a config that never changed, exactly when the scan is least trustworthy;
+- a **single-config request** (a `--config` naming one path, or auto-detection) carries no
+  `automationDetails`, so
   `upload-sarif`'s `category:` names it. That is the action filling a gap, not overriding: it sets
   `automationDetails` only when a run has none, so the per-config ids above always survive an
   upload;

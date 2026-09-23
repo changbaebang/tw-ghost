@@ -9,9 +9,15 @@ import { describeEnvironment, type EnvReport, formatEnv } from './env.js';
 import { TwGhostConfigError } from './errors.js';
 import { applyFixMap, draftFixMap, formatFix, parseFixMap } from './fix.js';
 import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
-import { formatSarif, formatSarifMany } from './format-sarif.js';
+import { automationIdFor, formatSarif, formatSarifMany } from './format-sarif.js';
 import { formatInit, type InitOptions, init } from './init.js';
-import { type AnalyzeManyOptions, analyzeMany, resolveConfigPaths } from './multi.js';
+import {
+  type AnalyzeManyOptions,
+  analyzeMany,
+  configLabel,
+  isMultiConfigRequest,
+  resolveConfigPaths,
+} from './multi.js';
 import { formatHuman, formatHumanMany } from './report.js';
 
 const require = createRequire(import.meta.url);
@@ -265,11 +271,17 @@ async function main(): Promise<never> {
   const maxAnnotations = Number.parseInt(maxAnnotationsRaw, 10);
   // --config is repeatable and may be a glob; --all-configs discovers every config under cwd.
   // An empty list means "auto-detect by walking up from cwd", exactly as before.
-  const configPaths = await resolveConfigPaths({
-    configs: values.config,
-    all: values['all-configs'],
-  });
+  const configRequest = { configs: values.config, all: values['all-configs'] };
+  const configPaths = await resolveConfigPaths(configRequest);
   const singleConfig = configPaths.length <= 1 ? configPaths[0] : undefined;
+  // A multi-config request that matched one config is analyzed on the single-config path (the JSON
+  // shape there is a documented contract), but it still has to be *named* like a multi-config run.
+  // Otherwise adding or deleting a sibling config renames the one that stayed, which is the alert
+  // churn the per-config ids exist to prevent.
+  const multiAutomationId =
+    singleConfig !== undefined && isMultiConfigRequest(configRequest)
+      ? automationIdFor(configLabel(process.cwd(), singleConfig))
+      : undefined;
 
   if (values.env) {
     if (configPaths.length > 1) return envMany(configPaths, values.tailwind, format === 'json');
@@ -378,7 +390,10 @@ async function main(): Promise<never> {
     output = gh.output === '' ? '' : `${gh.output}\n`;
   } else if (format === 'sarif') {
     // Uncapped by design: SARIF feeds a viewer that pages and groups on its own.
-    const sarif = formatSarif(report, { unknown: values.unknown });
+    const sarif = formatSarif(report, {
+      unknown: values.unknown,
+      automationId: multiAutomationId,
+    });
     process.stderr.write(`${sarif.summary}\n`);
     output = `${JSON.stringify(sarif.log, null, 2)}\n`;
   } else {
