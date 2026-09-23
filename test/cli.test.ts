@@ -504,8 +504,10 @@ describe('cli --fix-map round trip', () => {
     const path = await import('node:path');
     const dir = mkdtempSync(path.join(tmpdir(), 'twg-cli-fix-'));
     cpSync(fixture('replaced-scale'), dir, { recursive: true });
-    // the copied config must still resolve tailwindcss: link the repo's node_modules next to it
-    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'dir');
+    // the copied config must still resolve tailwindcss: link the repo's node_modules next to it.
+    // 'junction' rather than 'dir': a Windows directory symlink needs Developer Mode or elevation,
+    // an NTFS junction needs neither. The type is ignored on POSIX.
+    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'junction');
 
     const draft = run(['--fix-map-init', 'fixes.json', '--config', 'tailwind.config.ts'], dir);
     expect(draft.code).toBe(0);
@@ -562,7 +564,7 @@ describe('cli --fix-map round trip', () => {
     const path = await import('node:path');
     const dir = mkdtempSync(path.join(tmpdir(), 'twg-cli-fix2-'));
     cpSync(fixture('replaced-scale'), dir, { recursive: true });
-    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'dir');
+    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'junction');
     writeFileSync(path.join(dir, 'fixes.json'), JSON.stringify({ 'text-sm': 'text-l' }));
     const partial = run(
       ['--fix-map', 'fixes.json', '--json', '--config', 'tailwind.config.ts'],

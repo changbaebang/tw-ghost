@@ -10,6 +10,7 @@ import {
   scanContent,
 } from './extract.js';
 import { generate, stockConfigFrom } from './generate.js';
+import { stripBom, toGlobPattern, toPosix } from './paths.js';
 import { contentGlobs, findConfig, loadProject } from './project.js';
 import { suggestReplacements } from './suggest.js';
 import { buildUtilityVocabulary, looksUtilityLike } from './vocabulary.js';
@@ -120,7 +121,11 @@ async function resolveFiles(
 ): Promise<string[]> {
   const positive: string[] = [];
   const negative: string[] = [...DEFAULT_IGNORE_GLOBS];
-  for (const p of patterns) {
+  // Patterns reach tinyglobby as POSIX globs: on Windows a `src\**\*.tsx` (shell completion)
+  // or `.\src\**\*.tsx` (a `content` array written on Windows) would otherwise be read as
+  // escape sequences and match nothing at all.
+  for (const raw of patterns) {
+    const p = toGlobPattern(raw);
     if (p.startsWith('!')) negative.push(p.slice(1));
     else positive.push(p);
   }
@@ -172,7 +177,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<Report> {
   const occurrences: CandidateOccurrences = { locations: new Map() };
   for (const file of files) {
     const text = await readFile(file, 'utf8');
-    scanContent(path.relative(cwd, file).split(path.sep).join('/'), text, extract, occurrences);
+    // stripBom: a UTF-8 BOM (Visual Studio, Notepad, PowerShell 5.1) is not part of line 1,
+    // and counting it would shift every column on that line by one.
+    scanContent(toPosix(path.relative(cwd, file)), stripBom(text), extract, occurrences);
   }
 
   const ignore = (options.ignore ?? []).map(toRegExp);

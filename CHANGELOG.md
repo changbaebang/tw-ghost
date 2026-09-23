@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Windows is a supported platform**, verified by CI: the suite now runs on `ubuntu-latest` **and**
+  `windows-latest` across Node 20 and 22 (lint, typecheck, build, tests, `npm pack` — the same steps on both).
 - **ESLint plugin** as a subpath, `tw-ghost/eslint` (ESLint ≥ 9 flat config, no ESLint dependency): rule
   `tw-ghost/no-ghost-class` reports every ghost class in `className` / `class` attributes (literals, template
   text, ternaries, `&&`, arrays, object keys) and in `clsx`/`cx`/`cn`/`classnames`/`cva`/`tv`/`twMerge`/`twJoin`
@@ -17,6 +19,22 @@ All notable changes to this project are documented here. The format follows
   JIT internals (`createContext` + `generateRules`) — ~20–300 ms to build both contexts, then thousands of classes
   per millisecond — giving the same `ok` / `ghost` / `unknown-variant` / `unknown` as `analyze()` (verified against
   every fixture). Also `stockDeclarations(candidate)`.
+
+### Fixed
+
+- **Windows: globs with backslash separators matched nothing.** Patterns reached the glob engine verbatim, and
+  picomatch reads `\` as an escape rather than a separator — so `tw-ghost "src\**\*.tsx"` from a Windows shell,
+  or a `content: ['.\\src\\**\\*.tsx']` written there, failed with *No files matched*. `--config
+  "apps\*\tailwind.config.*"` was worse: not recognised as a glob at all, so it was resolved as a literal path
+  and reported *Config file not found*. Separators are now rewritten on win32 only, where `\` cannot be an escape;
+  POSIX escapes are untouched.
+- **Windows: `--fix-map --write` rewrote every line of a mixed-ending file.** The EOL rule was "any CRLF anywhere →
+  CRLF for the whole file", so one stray CRLF in a mostly-LF file converted all of it and buried the real diff.
+  Each line now keeps its own terminator, and a file without a trailing newline stays that way.
+- **UTF-8 BOM.** A BOM (Visual Studio, Notepad, PowerShell 5.1 `Set-Content`) was counted as part of line 1, so
+  every reported column on that line — `::error col=` annotations included — was off by one; it is now skipped
+  when scanning and written back untouched when fixing. `--fix-map` also accepts a map file with a BOM instead of
+  failing with *invalid JSON*.
 
 ## [0.3.0] - 2026-09-21
 

@@ -1,0 +1,6 @@
+# Keep the working tree LF on every platform.
+#
+# Git for Windows defaults to core.autocrlf=true, which would check this repo out with CRLF. Two
+# things break then: Biome's formatter enforces LF (`biome check .` would flag every file), and the
+# fixtures under test/ are compared by line and column.
+* text=auto eol=lf

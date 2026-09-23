@@ -3,6 +3,7 @@ import path from 'node:path';
 import { glob, isDynamicPattern } from 'tinyglobby';
 import { type AnalyzeOptions, analyze, type Report, type Summary } from './analyze.js';
 import { TwGhostConfigError } from './errors.js';
+import { toGlobPattern, toPosix } from './paths.js';
 import { CONFIG_FILE_NAMES } from './project.js';
 
 /** Directories `--all-configs` never descends into. */
@@ -23,8 +24,6 @@ export interface ResolveConfigsOptions {
   cwd?: string | undefined;
 }
 
-const toPosix = (p: string): string => p.split(path.sep).join('/');
-
 /**
  * Turn `--config` values (paths and globs) and/or `--all-configs` into a sorted, de-duplicated
  * list of absolute config paths. Throws `TwGhostConfigError` when a glob matches nothing or
@@ -34,7 +33,10 @@ export async function resolveConfigPaths(options: ResolveConfigsOptions = {}): P
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const found = new Set<string>();
 
-  for (const input of options.configs ?? []) {
+  for (const raw of options.configs ?? []) {
+    // POSIX separators before anything looks at the string: on Windows `apps\*\tailwind.config.ts`
+    // reads as escaped `*` characters, so it is neither a glob nor an existing file.
+    const input = toGlobPattern(raw);
     if (!isDynamicPattern(input)) {
       found.add(path.resolve(cwd, input));
       continue;

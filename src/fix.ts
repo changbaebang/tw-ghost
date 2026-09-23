@@ -3,6 +3,7 @@ import pc from 'picocolors';
 import { DEFAULT_SEPARATOR, splitVariants } from './classify.js';
 import { TwGhostConfigError } from './errors.js';
 import { isWholeToken } from './extract.js';
+import { splitBom } from './paths.js';
 
 /**
  * A fix map: bare utility (no variants, no `!`, no leading `-`) → replacement bare utility, or
@@ -42,7 +43,9 @@ const BARE = /^[^\s:!]+$/;
 export function parseFixMap(text: string, source = 'fix map'): FixMap {
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    // A BOM is not valid JSON: Notepad and PowerShell 5.1's `Set-Content` write one by default,
+    // so a fix map edited on Windows would otherwise die with "Unexpected token".
+    raw = JSON.parse(splitBom(text)[1]);
   } catch (error) {
     throw new TwGhostConfigError(`${source}: invalid JSON (${(error as Error).message})`);
   }
@@ -126,10 +129,15 @@ export function applyFixMapToText(
   if (plan.length === 0) return { text, edits: [] };
 
   const edits: FixEdit[] = [];
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const original = lines[i] as string;
+  // Split so that every line keeps its OWN terminator: `parts` alternates content, terminator,
+  // content, … A file with mixed endings (routine on Windows, where Git, editors and generators
+  // disagree) is then written back exactly as it was apart from the edits — picking one dominant
+  // EOL for the whole file would rewrite every untouched line and bury the real diff.
+  // The split must stay `\r?\n` to match `scanContent`, or reported line numbers would drift.
+  const [bom, body] = splitBom(text);
+  const parts = body.split(/(\r\n|\n)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const original = parts[i] as string;
     if (original.trim() === '') continue;
     // Find every whole-token occurrence on the ORIGINAL line first, so reported columns are
     // stable and no edit can be found inside the text another edit inserted.
@@ -159,13 +167,13 @@ export function applyFixMapToText(
       } else {
         out += hit.to;
       }
-      edits.push({ file, line: i + 1, col: hit.idx + 1, from: hit.from, to: hit.to });
+      edits.push({ file, line: i / 2 + 1, col: hit.idx + 1, from: hit.from, to: hit.to });
     }
     out += original.slice(cursor);
-    lines[i] = out;
+    parts[i] = out;
   }
   edits.sort((a, b) => a.line - b.line || a.col - b.col);
-  return { text: edits.length === 0 ? text : lines.join(eol), edits };
+  return { text: edits.length === 0 ? text : bom + parts.join(''), edits };
 }
 
 export interface ApplyFixMapOptions {
