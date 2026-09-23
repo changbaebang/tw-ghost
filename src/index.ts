@@ -40,6 +40,35 @@ export {
   type GithubFormatOptions,
   type GithubFormatResult,
 } from './format-github.js';
+export {
+  classFingerprint,
+  encodeUriPath,
+  formatSarif,
+  formatSarifMany,
+  GHOST_RULE_ID,
+  SARIF_FINGERPRINT_KEY,
+  SARIF_MAX_SUGGESTIONS,
+  SARIF_SCHEMA_URI,
+  SARIF_TOOL_NAME,
+  SARIF_URI_BASE_ID,
+  SARIF_VERSION,
+  type SarifArtifactLocation,
+  type SarifFormatOptions,
+  type SarifFormatResult,
+  type SarifLevel,
+  type SarifLocation,
+  type SarifLog,
+  type SarifMultiformatMessageString,
+  type SarifPhysicalLocation,
+  type SarifRegion,
+  type SarifResult,
+  type SarifRule,
+  type SarifRun,
+  type SarifToolDriver,
+  sarifRules,
+  UNKNOWN_UTILITY_RULE_ID,
+  UNKNOWN_VARIANT_RULE_ID,
+} from './format-sarif.js';
 
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {

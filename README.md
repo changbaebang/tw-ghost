@@ -121,6 +121,134 @@ GitHub only surfaces **10 annotations of each level (error / warning / notice) p
 `::notice::tw-ghost: K more annotations omitted` so the cut is visible. `--json` is unchanged and
 remains the format for tooling.
 
+#### Code Scanning (SARIF)
+
+Annotations vanish with the check run. `--format sarif` writes a
+[SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log on stdout for
+[`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action), so ghosts become
+**code scanning alerts** instead: listed on the *Security* tab, shown inline on the pull request,
+and tracked — an alert survives the code moving and closes when the class is fixed.
+
+```yaml
+permissions:
+  contents: read
+  security-events: write # required to upload the results
+
+jobs:
+  tw-ghost:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx tw-ghost --format sarif > tw-ghost.sarif
+      - if: always() # ghosts exit 1; upload the findings anyway
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tw-ghost.sarif
+          category: tw-ghost
+```
+
+The exit code is unchanged, so the job still fails on ghosts — `if: always()` is what gets the
+alerts uploaded regardless. (An exit `2` config error writes nothing to stdout, so the upload step
+fails on an empty file, which is the signal you want.)
+
+The log looks like this, trimmed to one result:
+
+```jsonc
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tw-ghost",
+          "version": "0.3.0",
+          "semanticVersion": "0.3.0",
+          "informationUri": "https://github.com/changbaebang/tw-ghost#readme",
+          "rules": [
+            {
+              "id": "ghost-class",
+              "name": "GhostClass",
+              "shortDescription": { "text": "Tailwind class that produces no CSS in this config" },
+              "fullDescription": { "text": "The class is a valid stock Tailwind utility, but …" },
+              "help": { "text": "Replace the class with one …", "markdown": "**A class that …**" },
+              "defaultConfiguration": { "level": "error" },
+              "properties": { "tags": ["tailwindcss", "dead-code"] }
+            }
+          ]
+        }
+      },
+      "columnKind": "utf16CodeUnits",
+      "results": [
+        {
+          "ruleId": "ghost-class",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "text-sm produces no CSS in this Tailwind config (stock Tailwind: font-size: 0.875rem; line-height: 1.25rem) — try: text-l, text-m, text-s (+1 more)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/App.tsx", "uriBaseId": "%SRCROOT%" },
+                "region": { "startLine": 7, "startColumn": 21, "endColumn": 28 }
+              }
+            }
+          ],
+          "partialFingerprints": { "twGhostClassV1": "540c65051ed1cc37" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **One `result` per occurrence, never capped.** SARIF feeds a viewer that groups and pages on its
+  own, so there is no display cap to respect: `--max-annotations` is ignored and `--max-locations`
+  is forced to *all*. On the uploading side GitHub keeps
+  [the top 5,000 results per run](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit)
+  (25,000 maximum) — that truncation is GitHub's, not tw-ghost's.
+- **`message.text`** names the class, the declarations stock Tailwind would have set, and up to 3
+  replacement candidates (the rest are counted off as `(+N more)`).
+- **`region`** is 1-based and covers exactly the class: `endColumn` is `startColumn` plus its
+  length, in UTF-16 code units (`columnKind`).
+- **`artifactLocation.uri`** is repo-relative, POSIX, and percent-encoded per segment (a space
+  becomes `%20`, `#` becomes `%23`), under `uriBaseId: "%SRCROOT%"`. Paths are relative to
+  `GITHUB_WORKSPACE` when the file lives under it, else to the current directory — the same rule
+  `--format github` uses for `file=`. No absolute path from the build machine reaches the log.
+- **`partialFingerprints.twGhostClassV1`** is a SHA-256 of `class + file` (16 hex characters). It
+  deliberately leaves the line and column out, so moving code does not retire an alert and open a
+  new one in its place. Two occurrences of one class in one file therefore share a fingerprint,
+  which is what a *partial* fingerprint is for — the location completes the identity.
+- **Rules are declared for what the run can produce.** `ghost-class` (level `error`) always;
+  `unknown-utility-like` and `unknown-variant` (both level `note`, so they do not raise the alert
+  severity) only with `--unknown`, which is also the only way their results appear. The schema
+  would allow declaring rules a run never uses — not declaring them just keeps the log honest
+  about that run.
+
+**Several configs → several runs.** `--all-configs` (or repeated `--config`) produces **one run per
+config**, each with its own `tool.driver.rules` and `automationDetails.id` of
+`tw-ghost/<config path>`. The same class is legitimately a ghost under one config and fine under
+another, so a single merged run would throw away the only thing that explains the verdict; code
+scanning renders runs separately, which keeps that split visible. Every `uri` stays relative to the
+repository root rather than to each config's folder, so a shared package flagged by two apps points
+at the same file both times. A config that failed to load contributes no run — it is already on
+stderr and already forces exit `2`. Two notes:
+
+- a single run carries **no** `automationDetails`, so `upload-sarif`'s `category:` names it as
+  documented; the per-config ids only appear once there is more than one run;
+- GitHub accepts [at most 20 runs per SARIF file](https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/results-exceed-limit),
+  so a repository with more than 20 Tailwind configs needs more than one upload (run tw-ghost per
+  config group and give each upload its own `category:`).
+
+A one-line summary
+(`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`) goes to stderr, since
+stdout is redirected into the file.
+
 Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
 `postcss` ^8 is an *optional* peer: tw-ghost uses the project's `postcss` when one is installed
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
@@ -315,9 +443,9 @@ project is supported. `--env --json` prints the same data as JSON, including `wa
 | `--all-configs` | off | Analyze every `tailwind.config.{ts,js,cjs,mjs}` under cwd (skipping `node_modules`, `dist`, `.next`, `build`, `out`, `coverage`). Exit `2` when none is found. Can be combined with `--config`. |
 | `--tailwind <dir>` | config's directory | Resolve `tailwindcss` (and `postcss`) from this directory instead of the config file's. For layouts where the config's folder cannot reach the install. The config file itself still loads from its own location. |
 | `--env` | off | Print the resolved environment (config, `tailwindcss` version + path, `postcss`, extractor, content globs, warnings) and exit 0 — or exit 2 with the preflight error. Combine with `--json`. |
-| `--format <human\|json\|github>` | `human` | Output format. `github` prints one `::error` [workflow-command annotation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) per ghost **occurrence** (every location, `--max-locations` is ignored) plus a one-line summary on stderr; see *CI*. |
+| `--format <human\|json\|github\|sarif>` | `human` | Output format. `github` prints one `::error` [workflow-command annotation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message) per ghost **occurrence** (every location, `--max-locations` is ignored) plus a one-line summary on stderr. `sarif` prints a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub Code Scanning — one `result` per occurrence, uncapped. Both see *CI*. |
 | `--json` | off | Alias for `--format json`: a machine-readable report on stdout. Unchanged. |
-| `--max-annotations <n>` | `50` | `github` only: annotations printed before the rest are folded into one `::notice::tw-ghost: K more annotations omitted`; `0` = all. |
+| `--max-annotations <n>` | `50` | `github` only: annotations printed before the rest are folded into one `::notice::tw-ghost: K more annotations omitted`; `0` = all. Ignored by `sarif` (SARIF has no display cap). |
 | `--unknown` | off | Also list the **utility-like** unknowns — classes that produce no CSS in stock *or* project but whose prefix is a Tailwind utility and whose value looks like one it could take (`text-mm`, `px-13`, `rounded-xll`; typos and dead tokens) — sorted by occurrence count, then name; plus classes whose utility works but whose variant chain this config does not know (`unknownVariant`). Identifiers that merely share a root (`my-page`, `no-op`, `bottom-start`) are not shown. |
 | `--unknown-all` | off | With `--unknown`: list every raw unknown token instead of the utility-like subset (every word, identifier and URL the extractor saw — on a real app this is tens of thousands of lines). Same sort order. |
 | `--max-locations <n>` | `3` | Locations kept per class; `0` = all. Must be a non-negative integer (`3abc` is rejected with exit 2). |
