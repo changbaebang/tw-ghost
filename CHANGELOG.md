@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`tw-ghost init`**: scans once and scaffolds the project — a GitHub Actions workflow whose install steps and
+  runner match the detected package manager (`packageManager`, else the lockfile: pnpm / yarn / npm / bun) and
+  whose analysis step uploads SARIF (`--no-sarif` for `--format github` instead), plus a fix-map draft when the
+  scan finds ghosts. Never overwrites (existing files are reported as `exists`), installs nothing, and exits `0`
+  even with findings. Flags: `--dry-run`, `--no-sarif`, `--no-fix-map`, `--workflow <name>`, `--config`, `--json`.
+  Programmatic: `init()`, `renderWorkflow()`, `detectPackageInfo()`, `formatInit()`.
 - **`--format sarif`**: a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log on
   stdout, for `github/codeql-action/upload-sarif` — ghosts become tracked **code scanning alerts** instead of
   annotations that vanish with the check run. One `result` per **occurrence**, never capped (`--max-annotations`

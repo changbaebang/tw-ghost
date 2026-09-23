@@ -10,6 +10,7 @@ import { TwGhostConfigError } from './errors.js';
 import { applyFixMap, draftFixMap, formatFix, parseFixMap } from './fix.js';
 import { DEFAULT_MAX_ANNOTATIONS, formatGithub } from './format-github.js';
 import { formatSarif, formatSarifMany } from './format-sarif.js';
+import { formatInit, type InitOptions, init } from './init.js';
 import { type AnalyzeManyOptions, analyzeMany, resolveConfigPaths } from './multi.js';
 import { formatHuman, formatHumanMany } from './report.js';
 
@@ -21,6 +22,7 @@ Find Tailwind classes that silently generate no CSS in YOUR config.
 
 Usage
   tw-ghost [globs...] [options]
+  tw-ghost init [options]          scaffold the CI workflow (and a fix-map draft) into this project
 
 Options
   -c, --config <path>       tailwind.config.{ts,js,cjs,mjs} (default: walk up from cwd);
@@ -55,6 +57,10 @@ Options
                             ghosts remain unmapped (unless --fail-on none)
       --write               with --fix-map: write the changed files
       --no-color            disable colors
+      --dry-run             init: report what would be written without writing it
+      --no-sarif            init: generate a --format github workflow instead of SARIF upload
+      --no-fix-map          init: do not write a fix-map draft
+      --workflow <name>     init: workflow file name (default: tw-ghost.yml)
   -h, --help                show this help
   -v, --version             print version
 
@@ -202,6 +208,10 @@ async function main(): Promise<never> {
     'fix-map-init': { type: 'string' },
     write: { type: 'boolean', default: false },
     'no-color': { type: 'boolean', default: false },
+    'dry-run': { type: 'boolean', default: false },
+    'no-sarif': { type: 'boolean', default: false },
+    'no-fix-map': { type: 'boolean', default: false },
+    workflow: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
     version: { type: 'boolean', short: 'v', default: false },
   } satisfies ParseArgsConfig['options'];
@@ -215,6 +225,26 @@ async function main(): Promise<never> {
 
   if (values.help) return exitAfterWrite(process.stdout, HELP, 0);
   if (values.version) return exitAfterWrite(process.stdout, `${version}\n`, 0);
+
+  if (positionals[0] === 'init') {
+    if (positionals.length > 1) {
+      return fail(`init takes no positional arguments (got ${JSON.stringify(positionals[1])})`);
+    }
+    const initOptions: InitOptions = {
+      dryRun: values['dry-run'],
+      sarif: !values['no-sarif'],
+      fixMap: !values['no-fix-map'],
+    };
+    const first = values.config?.[0];
+    if (first !== undefined) initOptions.config = first;
+    if (values.workflow !== undefined) initOptions.workflow = values.workflow;
+    const result = await init(initOptions);
+    const out = values.json
+      ? `${JSON.stringify({ version, ...result }, null, 2)}\n`
+      : formatInit(result, { color: !values['no-color'] });
+    // Exit 0 even when ghosts were found: init reports, the workflow is what fails a build.
+    return exitAfterWrite(process.stdout, out, 0);
+  }
   const format = values.format ?? (values.json ? 'json' : 'human');
   if (format !== 'human' && format !== 'json' && format !== 'github' && format !== 'sarif') {
     return fail(

@@ -692,3 +692,42 @@ describe('cli --fix-map round trip', () => {
     expect(lenient.stdout).toContain('unmapped');
   });
 });
+
+describe('cli init', () => {
+  it('scaffolds a project, is idempotent, and honours --dry-run / --json', async () => {
+    const { cpSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } =
+      await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'twg-cli-init-'));
+    cpSync(fixture('replaced-scale'), dir, { recursive: true });
+    symlinkSync(path.resolve('node_modules'), path.join(dir, 'node_modules'), 'junction');
+    writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'demo', packageManager: 'pnpm@9.0.0' }),
+    );
+
+    const dry = run(['init', '--dry-run', '--no-color'], dir);
+    expect(dry.code).toBe(0);
+    expect(dry.stdout).toContain('dry run');
+    expect(dry.stdout).toContain('would create .github/workflows/tw-ghost.yml');
+    expect(existsSync(path.join(dir, '.github'))).toBe(false);
+
+    const real = run(['init', '--no-color'], dir);
+    expect(real.code).toBe(0);
+    expect(real.stdout).toContain('created');
+    expect(real.stdout).toContain('Next');
+    expect(readFileSync(path.join(dir, '.github', 'workflows', 'tw-ghost.yml'), 'utf8')).toContain(
+      'pnpm dlx tw-ghost',
+    );
+
+    const again = run(['init', '--json'], dir);
+    const json = JSON.parse(again.stdout);
+    expect(json.version).toBeTypeOf('string');
+    expect(json.files.every((f: { status: string }) => f.status === 'exists')).toBe(true);
+    expect(json.config).toBe('tailwind.config.ts');
+
+    expect(run(['init', 'extra'], dir).code).toBe(2);
+    expect(run(['init', 'extra'], dir).stderr).toContain('no positional arguments');
+  });
+});

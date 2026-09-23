@@ -72,6 +72,18 @@ export {
 
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
+  detectPackageInfo,
+  type FormatInitOptions,
+  formatInit,
+  type InitFile,
+  type InitFileStatus,
+  type InitOptions,
+  type InitResult,
+  init,
+  renderWorkflow,
+  type WorkflowOptions,
+} from './init.js';
+export {
   type CreateLiveClassifierOptions,
   createLiveClassifier,
   type LiveClassifier,

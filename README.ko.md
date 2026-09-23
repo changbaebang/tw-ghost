@@ -92,6 +92,26 @@ npx tw-ghost --json --ignore "^legacy-" --unknown
 npx tw-ghost --all-configs --json
 ```
 
+### 시작하기: `tw-ghost init`
+
+```sh
+npx tw-ghost init            # 아래 파일들을 만든다
+npx tw-ghost init --dry-run  # 무엇을 만들지만 출력하고 아무것도 쓰지 않는다
+```
+
+`init` 은 한 번 스캔한 뒤 tw-ghost 를 계속 돌리는 데 필요한 것을 만들어 준다:
+
+| 파일 | 조건 |
+| --- | --- |
+| `.github/workflows/tw-ghost.yml` | 항상. 설치 단계와 실행 명령은 패키지 매니저(`packageManager`, 없으면 lockfile: pnpm / yarn / npm / bun)에 맞춰지고, 분석 단계는 `--no-sarif` 가 없으면 SARIF 를 업로드한다 |
+| `tw-ghost.fixes.json` | 스캔에서 유령 클래스를 찾았을 때만. `--fix-map-init` 과 같은 초안이며 *유령 클래스 고치기* 로 바로 이어진다 |
+
+**덮어쓰지 않는다**: 이미 있는 파일은 `exists` 로 보고하고 그대로 둔다. 설정을 바꾼 뒤 다시 실행해도
+안전하다. 아무것도 설치하지 않고, 커밋하지 않으며, 스캔에서 유령을 찾아도 종료 코드는 `0` 이다 —
+빌드를 실패시키는 것은 워크플로의 일이지 스캐폴더의 일이 아니다. `tailwind.config.*` 가 아직 없으면
+워크플로만 만들고 이유를 출력한다. 플래그: `--dry-run`, `--no-sarif`, `--no-fix-map`,
+`--workflow <name>`, `--config <path>`, `--json`.
+
 ### CI
 
 GitHub Actions 스텝에서 `--format github` 을 주면 유령 발생 위치마다 PR 인라인 주석이 달린다
