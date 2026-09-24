@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { Finding, GhostFinding, Report } from './analyze.js';
 import type { Location } from './extract.js';
-import { toPosix } from './paths.js';
+import { climbsOut, toPosix } from './paths.js';
 
 /**
  * GitHub Actions workflow-command output (`--format github`): one `::error` annotation per ghost
@@ -45,7 +45,10 @@ export function relativizeFile(file: string, cwd: string, workspace: string | un
   const abs = path.resolve(cwd, file);
   if (workspace) {
     const rel = path.relative(path.resolve(workspace), abs);
-    if (rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)) return toPosix(rel);
+    const posix = toPosix(rel);
+    // Under the workspace means: not empty, not a climb out of it, not absolute (another drive).
+    // `climbsOut` compares by segment — a repository directory named `..shared/` is inside.
+    if (posix !== '' && !climbsOut(posix) && !path.isAbsolute(rel)) return posix;
   }
   return toPosix(path.relative(cwd, abs));
 }

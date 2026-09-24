@@ -5,6 +5,7 @@ import type { Location } from './extract.js';
 // GITHUB_WORKSPACE, else cwd-relative. Reused so both CI formats agree on every path.
 import { relativizeFile } from './format-github.js';
 import { type ConfigReport, isConfigFailure, type MultiReport } from './multi.js';
+import { climbsOut } from './paths.js';
 import { VERSION } from './version.js';
 
 /**
@@ -233,8 +234,7 @@ function ghostMessage(g: GhostFinding): string {
  */
 export function isOutsideRoot(posixRel: string): boolean {
   return (
-    posixRel === '..' ||
-    posixRel.startsWith('../') ||
+    climbsOut(posixRel) ||
     path.win32.isAbsolute(posixRel) || // `D:/x`, `//server/x`, and `/x`
     path.posix.isAbsolute(posixRel)
   );

@@ -59,6 +59,19 @@ describe('escaping (workflow-command spec)', () => {
 });
 
 describe('relativizeFile', () => {
+  it('treats a workspace directory whose name starts with .. as inside, not as a climb', () => {
+    const ws = path.resolve('/ws/repo');
+    const cwd = path.join(ws, 'apps/web');
+    // `..shared` is a real directory under the workspace: segment `..shared`, not `..` + `shared`.
+    expect(relativizeFile(path.join(ws, '..shared/Button.tsx'), cwd, ws)).toBe(
+      '..shared/Button.tsx',
+    );
+    // A genuine climb out of the workspace still falls back to cwd-relative.
+    expect(relativizeFile(path.resolve('/ws/outside/Button.tsx'), cwd, ws)).toBe(
+      '../../../outside/Button.tsx',
+    );
+  });
+
   it('is relative to the workspace when the file lives under it', () => {
     const ws = path.resolve('/ws/repo');
     expect(relativizeFile('src/App.tsx', path.join(ws, 'apps/web'), ws)).toBe(

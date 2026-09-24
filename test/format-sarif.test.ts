@@ -405,6 +405,20 @@ describe('isOutsideRoot', () => {
   );
 });
 
+describe('a workspace directory named with a leading ..', () => {
+  it('is inside the root: repo-relative uri and no warning', () => {
+    const ws = path.resolve('/repo');
+    const r = report({
+      ghosts: [ghost('p-3', [[path.join(ws, '..shared/Button.tsx'), 1, 1]])],
+    });
+    const out = formatSarif(r, { cwd: path.join(ws, 'apps/web'), workspace: ws });
+    expect(out.log.runs[0]?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
+      '..shared/Button.tsx',
+    );
+    expect(out.warnings).toEqual([]);
+  });
+});
+
 describe('formatSarifMany: one run per config', () => {
   const multi = (configs: MultiReport['configs']): MultiReport => ({
     configs,
