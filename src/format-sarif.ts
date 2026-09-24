@@ -222,11 +222,26 @@ function ghostMessage(g: GhostFinding): string {
   return `${g.class} produces no CSS in this Tailwind config${stock} — try: ${shown.join(', ')}${more}`;
 }
 
-/** `relativizeFile` output that leaves the root it was made relative to. */
-const escapesRoot = (posixRel: string): boolean => posixRel === '..' || posixRel.startsWith('../');
+/**
+ * `relativizeFile` output that does not stay under the root it was made relative to.
+ *
+ * Two shapes. `../x` is the POSIX case and the same-drive Windows case. When the file is on another
+ * drive or a UNC share, `path.relative` has no common root to climb to and returns the target
+ * **as an absolute path** — `D:/shared/Button.tsx`, `//server/share/Button.tsx` — so a `../` test
+ * alone lets exactly those through, unwarned, as `D%3A/...`. Exported for its own test: the
+ * Windows shapes are produced with `path.win32.relative` on every platform.
+ */
+export function isOutsideRoot(posixRel: string): boolean {
+  return (
+    posixRel === '..' ||
+    posixRel.startsWith('../') ||
+    path.win32.isAbsolute(posixRel) || // `D:/x`, `//server/x`, and `/x`
+    path.posix.isAbsolute(posixRel)
+  );
+}
 
 /**
- * Why a `../` uri is worth a warning, in one line. Code scanning keys alerts to repository paths,
+ * Why an out-of-root uri is worth a warning, in one line. Code scanning keys alerts to repository paths,
  * so it cannot place this one; and `upload-sarif` joins a relative uri onto the source root and
  * fingerprints whatever exists there, which may be a different file than the one scanned.
  */
@@ -236,8 +251,9 @@ function outsideRootWarning(outside: ReadonlyMap<string, number>): string {
   return (
     `${plural(results, 'SARIF result')} in ${plural(outside.size, 'file')} point outside the ` +
     `scanned root (e.g. ${example}). Code scanning cannot map them to a repository file, and ` +
-    `upload-sarif may fingerprint them from whatever sits at that path. Run from the repository ` +
-    `root, or set GITHUB_WORKSPACE, so they become repo-relative.`
+    `upload-sarif may fingerprint them from whatever sits at that path. A file outside the ` +
+    `repository cannot be represented; for one inside it, run from the repository root or set ` +
+    `GITHUB_WORKSPACE so the path becomes repo-relative.`
   );
 }
 
@@ -253,7 +269,7 @@ function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOption
   const outsideRoot = new Map<string, number>();
   const uriFor = (file: string): string => {
     const rel = relativizeFile(file, cwd, workspace);
-    if (escapesRoot(rel)) outsideRoot.set(rel, (outsideRoot.get(rel) ?? 0) + 1);
+    if (isOutsideRoot(rel)) outsideRoot.set(rel, (outsideRoot.get(rel) ?? 0) + 1);
     return encodeUriPath(rel);
   };
   const version = options.version ?? VERSION;

@@ -7,6 +7,7 @@ import {
   formatSarif,
   formatSarifMany,
   GHOST_RULE_ID,
+  isOutsideRoot,
   SARIF_SCHEMA_URI,
   SARIF_URI_BASE_ID,
   SARIF_VERSION,
@@ -351,6 +352,52 @@ describe('partialFingerprints', () => {
     ).toBe('apps/shared/src/Button.tsx');
     expect(withWorkspace.warnings).toEqual([]);
   });
+});
+
+describe('isOutsideRoot', () => {
+  // Ground the predicate in what Node actually returns, not in what we assume: `path.win32` runs
+  // on every platform, so the Windows shapes are produced here for real.
+  it('catches the absolute paths path.relative returns for another drive or a UNC share', () => {
+    const toPosix = (p: string): string => p.split('\\').join('/');
+    const rel = (from: string, to: string): string => toPosix(path.win32.relative(from, to));
+
+    // No common root: `path.relative` hands back the target as an absolute path.
+    expect(rel('C:\\repo\\apps\\web', 'D:\\shared\\Button.tsx')).toBe('D:/shared/Button.tsx');
+    expect(rel('C:\\repo\\apps\\web', '\\\\server\\share\\Button.tsx')).toBe(
+      '//server/share/Button.tsx',
+    );
+    // Same drive: the familiar climb.
+    expect(rel('C:\\repo\\apps\\web', 'C:\\shared\\Button.tsx')).toBe('../../../shared/Button.tsx');
+
+    for (const outside of [
+      'D:/shared/Button.tsx',
+      '//server/share/Button.tsx',
+      '../../../shared/Button.tsx',
+      '../x',
+      '..',
+      '/etc/passwd',
+    ]) {
+      expect(isOutsideRoot(outside), outside).toBe(true);
+    }
+    for (const inside of ['src/a.tsx', 'a.tsx', '.', 'apps/web/src/Page.tsx', '..dots/a.tsx']) {
+      expect(isOutsideRoot(inside), inside).toBe(false);
+    }
+  });
+
+  // Only a Windows runner can put a real file on another drive than the scan: windows-latest keeps
+  // the checkout on D:\ and the OS on C:\. Elsewhere `C:\Windows\win.ini` is just a relative name.
+  it.runIf(process.platform === 'win32')(
+    'warns end to end for a file on another drive than the scanned root',
+    () => {
+      const r = report({ ghosts: [ghost('p-3', [['C:\\Windows\\win.ini', 1, 1]])] });
+      const out = formatSarif(r, { cwd: fixture('replaced-scale') });
+      expect(out.log.runs[0]?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
+        'C%3A/Windows/win.ini',
+      );
+      expect(out.warnings).toHaveLength(1);
+      expect(out.warnings[0]).toContain('(e.g. C:/Windows/win.ini)');
+    },
+  );
 });
 
 describe('formatSarifMany: one run per config', () => {
