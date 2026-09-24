@@ -755,6 +755,9 @@ export 된다: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify
 ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 함께 제공된다 (`import` 는
 `dist/index.d.ts`, `require` 는 `dist/index.d.cts`, `exports` 조건별로 선택).
 
+**그 목록이 표면의 전부다**: 이 문서에 문서화되지 않은 심볼은 내부용이라 `tw-ghost` 에서 export 되지 않고 어느
+릴리스에서든 바뀔 수 있다. export 집합은 테스트가 고정하고, 그 집합의 변경은 모두 CHANGELOG 한 줄이 된다.
+
 ## 동작 원리
 
 1. **프로젝트의 Tailwind 를 로드한다.** `tailwindcss`, `tailwindcss/loadConfig` (`.ts` 는 jiti 가

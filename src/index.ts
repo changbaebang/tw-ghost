@@ -1,3 +1,10 @@
+/**
+ * The public entry of `tw-ghost`.
+ *
+ * Rule: a symbol is exported here **iff** the README documents it. Everything else is internal and
+ * may change in any release. `test/public-api.test.ts` pins this list, so a change to the surface
+ * is a deliberate diff with a changelog line, never an accident of a refactor.
+ */
 export {
   type AnalyzeOptions,
   analyze,
@@ -6,21 +13,10 @@ export {
   type Report,
   type Summary,
 } from './analyze.js';
-export {
-  CORE_UTILITY_ROOTS,
-  classify,
-  collectRoots,
-  DEFAULT_SEPARATOR,
-  isPlausibleVariantChain,
-  splitVariants,
-  stripModifiers,
-  utilityPart,
-  utilityRoot,
-  type Verdict,
-} from './classify.js';
-export { describeEnvironment, describeProject, type EnvReport, formatEnv } from './env.js';
+export { classify, splitVariants, type Verdict } from './classify.js';
+export { describeEnvironment, type EnvReport } from './env.js';
 export { TwGhostConfigError } from './errors.js';
-export { isWholeToken, type Location, scanContent } from './extract.js';
+export { type Location, scanContent } from './extract.js';
 export {
   type ApplyFixMapOptions,
   applyFixMap,
@@ -32,25 +28,11 @@ export {
   type FixResult,
   formatFix,
   parseFixMap,
-  replacementFor,
 } from './fix.js';
+export { formatGithub, type GithubFormatOptions, type GithubFormatResult } from './format-github.js';
 export {
-  DEFAULT_MAX_ANNOTATIONS,
-  formatGithub,
-  type GithubFormatOptions,
-  type GithubFormatResult,
-} from './format-github.js';
-export {
-  automationIdFor,
-  encodeUriPath,
   formatSarif,
   formatSarifMany,
-  GHOST_RULE_ID,
-  SARIF_MAX_SUGGESTIONS,
-  SARIF_SCHEMA_URI,
-  SARIF_TOOL_NAME,
-  SARIF_URI_BASE_ID,
-  SARIF_VERSION,
   type SarifArtifactLocation,
   type SarifFormatOptions,
   type SarifFormatResult,
@@ -64,11 +46,7 @@ export {
   type SarifRule,
   type SarifRun,
   type SarifToolDriver,
-  sarifRules,
-  UNKNOWN_UTILITY_RULE_ID,
-  UNKNOWN_VARIANT_RULE_ID,
 } from './format-sarif.js';
-
 export { collectClasses, type StockConfigOptions, stockConfigFrom } from './generate.js';
 export {
   detectPackageInfo,
@@ -88,15 +66,12 @@ export {
   type LiveClassifier,
 } from './live.js';
 export {
-  ALL_CONFIGS_IGNORE_DIRS,
   type AnalyzeManyOptions,
   analyzeMany,
   type ConfigFailure,
   type ConfigReport,
   type ConfigResult,
-  configLabel,
   isConfigFailure,
-  isMultiConfigRequest,
   type MultiReport,
   type MultiSummary,
   type ResolveConfigsOptions,
@@ -104,25 +79,16 @@ export {
 } from './multi.js';
 export {
   assertSupportedTailwind,
-  assertTailwindV3,
-  COMPATIBILITY_DOCS,
-  contentGlobs,
-  contentWarnings,
   findConfig,
   type LoadProjectOptions,
   loadProject,
-  MIN_TAILWIND_VERSION,
-  SUPPORTED_TAILWIND_RANGE,
-  unwrapDefaultExport,
 } from './project.js';
 export { type FormatOptions, formatHuman, formatHumanMany } from './report.js';
-export { changedThemeKeys, flattenThemeKeys } from './suggest.js';
+export { changedThemeKeys } from './suggest.js';
 export { unescapeCssIdentifier } from './unescape.js';
 export {
   buildUtilityVocabulary,
   looksUtilityLike,
-  matchUtilityPrefix,
   type UtilityVocabulary,
   type VocabularyOptions,
-  withinOneEdit,
 } from './vocabulary.js';

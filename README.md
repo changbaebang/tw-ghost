@@ -770,7 +770,9 @@ finds no config. `analyze()` is unchanged.
 `describeEnvironment({ cwd, config, tailwind })` returns what `--env` prints. Lower-level
 pieces are exported too: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`,
 `looksUtilityLike`, `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`,
-`changedThemeKeys`. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
+`changedThemeKeys`. **That list is the whole surface**: a symbol not documented on this page is internal, is not
+exported from `tw-ghost`, and can change in any release; the exported set is pinned by a test and every
+change to it is a changelog line. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
 definitions (`dist/index.d.ts` for `import`, `dist/index.d.cts` for `require`, selected per
 `exports` condition).
 
