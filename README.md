@@ -219,7 +219,6 @@ The log looks like this, trimmed to one result:
               }
             }
           ],
-          "partialFingerprints": { "twGhostClassV1": "540c65051ed1cc37" }
         }
       ]
     }
@@ -236,14 +235,30 @@ The log looks like this, trimmed to one result:
   replacement candidates (the rest are counted off as `(+N more)`).
 - **`region`** is 1-based and covers exactly the class: `endColumn` is `startColumn` plus its
   length, in UTF-16 code units (`columnKind`).
-- **`artifactLocation.uri`** is repo-relative, POSIX, and percent-encoded per segment (a space
-  becomes `%20`, `#` becomes `%23`), under `uriBaseId: "%SRCROOT%"`. Paths are relative to
-  `GITHUB_WORKSPACE` when the file lives under it, else to the current directory — the same rule
-  `--format github` uses for `file=`. No absolute path from the build machine reaches the log.
-- **`partialFingerprints.twGhostClassV1`** is a SHA-256 of `class + file` (16 hex characters). It
-  deliberately leaves the line and column out, so moving code does not retire an alert and open a
-  new one in its place. Two occurrences of one class in one file therefore share a fingerprint,
-  which is what a *partial* fingerprint is for — the location completes the identity.
+- **`artifactLocation.uri`** is POSIX and percent-encoded per segment (a space becomes `%20`, `#`
+  becomes `%23`), under `uriBaseId: "%SRCROOT%"`. It is relative to `GITHUB_WORKSPACE` when the
+  file lives under it, else to the current directory — the same rule `--format github` uses for
+  `file=`. No absolute path from the build machine reaches the log. The cwd fallback means a
+  `content` glob that reaches above the scanned directory yields a `../` path when no workspace
+  covers the file; see the fingerprint note below for what that costs.
+- **No `partialFingerprints`.** Code scanning reads exactly one partial fingerprint,
+  [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object),
+  and `upload-sarif` computes it from the checked-out source whenever a result lacks that key. A
+  custom key of tw-ghost's own would ride along in the log and never be read — it would not stop the
+  action from adding the supported key, but it would read as a tracking guarantee that nothing
+  honours. So tw-ghost emits none.
+  What fingerprinting depends on is a `uri` the action can turn back into a file. Its
+  `resolveUriToFile` ignores `uriBaseId`, decodes the percent-encoding and joins a relative path
+  onto the source root, so a repo-relative `uri` works because it is repo-relative, not because of
+  `%SRCROOT%` (that is for display). A test asserts that, for files under the scanned root, every
+  emitted `uri` resolves that way. A `../` path (above) is outside this contract: the action only
+  rejects *absolute* paths outside the source root, so it joins `../x` on and takes whatever exists
+  there — possibly a sibling package's file — and code scanning has no repo path for it either way.
+  Measured by uploading a log with 13 `ghost-class` findings in one file (five on one line, six on
+  byte-identical lines, two more), covering 9 distinct `primaryLocationLineHash` values:
+  **13 findings became 13 alerts** — an alert is one result, so several ghosts on one line are not
+  collapsed — and moving the whole block down five lines without editing it kept **all 13 alert
+  numbers, with nothing opened and nothing retired**.
 - **Rules are declared for what the run can produce.** `ghost-class` (level `error`) always;
   `unknown-utility-like` and `unknown-variant` (both level `note`, so they do not raise the alert
   severity) only with `--unknown`, which is also the only way their results appear. The schema

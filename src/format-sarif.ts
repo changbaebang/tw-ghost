@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Finding, GhostFinding, Report } from './analyze.js';
 import type { Location } from './extract.js';
@@ -71,8 +70,6 @@ export interface SarifResult {
   level: SarifLevel;
   message: { text: string };
   locations: SarifLocation[];
-  /** Keyed by {@link SARIF_FINGERPRINT_KEY}; deliberately line-independent. */
-  partialFingerprints: Record<string, string>;
 }
 
 export interface SarifToolDriver {
@@ -131,7 +128,6 @@ export const SARIF_SCHEMA_URI = 'https://json.schemastore.org/sarif-2.1.0.json';
 export const SARIF_VERSION = '2.1.0';
 /** GitHub resolves relative `uri`s against the repository root under this symbol. */
 export const SARIF_URI_BASE_ID = '%SRCROOT%';
-export const SARIF_FINGERPRINT_KEY = 'twGhostClassV1';
 /** Suggestions listed in `message.text` before the rest are counted off. */
 export const SARIF_MAX_SUGGESTIONS = 3;
 
@@ -211,17 +207,6 @@ export const encodeUriPath = (posixPath: string): string =>
     .map((segment) => encodeURIComponent(segment))
     .join('/');
 
-/**
- * `partialFingerprints.twGhostClassV1`: a stable identity for "this class, in this file".
- *
- * Deliberately excludes the line and column, so moving the code does not retire the alert and
- * open a new one. Two occurrences of the same class in one file therefore share a fingerprint —
- * which is what `partialFingerprints` is for (a *partial* identity; the location completes it).
- */
-export function classFingerprint(cls: string, file: string): string {
-  return createHash('sha256').update(`${cls}\u0000${file}`).digest('hex').slice(0, 16);
-}
-
 function ghostMessage(g: GhostFinding): string {
   const stock = g.stockCss.length > 0 ? ` (stock Tailwind: ${g.stockCss.join('; ')})` : '';
   const shown = g.suggestions.slice(0, SARIF_MAX_SUGGESTIONS);
@@ -270,9 +255,6 @@ function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOption
         },
       },
     ],
-    partialFingerprints: {
-      [SARIF_FINGERPRINT_KEY]: classFingerprint(finding.class, loc.file),
-    },
   });
 
   for (const g of report.ghosts) add(GHOST_RULE_ID, g, ghostMessage(g));

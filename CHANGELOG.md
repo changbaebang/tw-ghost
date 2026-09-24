@@ -27,8 +27,15 @@ All notable changes to this project are documented here. The format follows
   `defaultConfiguration.level` and `properties.tags`. Each result has `ruleId` / `ruleIndex` / `level`, a
   `message.text` naming the class, the declarations stock Tailwind would have set and up to 3 suggestions, a
   `physicalLocation` with a repo-relative percent-encoded `uri` under `uriBaseId: "%SRCROOT%"` and a 1-based
-  `region` covering exactly the class, and `partialFingerprints.twGhostClassV1` — a SHA-256 of `class + file`
-  with no line in it, so moving code does not close an alert and open a new one. Exit codes unchanged; the
+  `region` covering exactly the class. **No `partialFingerprints`**: code scanning reads only
+  `primaryLocationLineHash`, which `upload-sarif` computes from the source whenever a result lacks that key. A
+  custom key would not have blocked that, but it would be carried and never read — a tracking claim nothing
+  honours — so none is emitted. Fingerprinting depends on the `uri` resolving to a file: the action's
+  `resolveUriToFile` ignores `uriBaseId` and joins a relative path onto the source root, which a test asserts for
+  files under the scanned root. A `../` `uri` (a `content` glob above the scanned directory with no workspace
+  covering it) is outside that contract and is pinned by a test rather than guaranteed.
+  Verified by upload: 13 findings in one file over 9 distinct line hashes became 13 alerts, and moving the block
+  without editing it kept all 13 alert numbers. Exit codes unchanged; the
   one-line summary goes to stderr because stdout is redirected into the `.sarif` file.
 - **Several configs → several SARIF runs**: `--all-configs` / repeated `--config` emit one `run` per config, each
   with `automationDetails.id` of `tw-ghost/<config path>` and repo-relative `uri`s throughout. Configs that failed
@@ -39,8 +46,8 @@ All notable changes to this project are documented here. The format follows
   naming one path, or auto-detection — carries no `automationDetails`, so `upload-sarif`'s `category:` names it;
   the action fills that field only when it is absent, so it never overwrites the per-config ids.
 - Programmatic API: `formatSarif()`, `formatSarifMany()`, `automationIdFor()`, `configLabel()`,
-  `isMultiConfigRequest()`, `sarifRules()`, `classFingerprint()`, `encodeUriPath()`,
-  `SARIF_SCHEMA_URI`, `SARIF_VERSION`, `SARIF_URI_BASE_ID`, `SARIF_FINGERPRINT_KEY`, `SARIF_MAX_SUGGESTIONS`,
+  `isMultiConfigRequest()`, `sarifRules()`, `encodeUriPath()`,
+  `SARIF_SCHEMA_URI`, `SARIF_VERSION`, `SARIF_URI_BASE_ID`, `SARIF_MAX_SUGGESTIONS`,
   `SARIF_TOOL_NAME`, `GHOST_RULE_ID`, `UNKNOWN_UTILITY_RULE_ID`, `UNKNOWN_VARIANT_RULE_ID` and the `Sarif*` types.
 - **ESLint plugin** as a subpath, `tw-ghost/eslint` (ESLint ≥ 9 flat config, no ESLint dependency): rule
   `tw-ghost/no-ghost-class` reports every ghost class in `className` / `class` attributes (literals, template

@@ -218,7 +218,6 @@ jobs:
               }
             }
           ],
-          "partialFingerprints": { "twGhostClassV1": "540c65051ed1cc37" }
         }
       ]
     }
@@ -235,13 +234,28 @@ jobs:
   들어간다(나머지는 `(+N more)` 로 센다).
 - **`region`** 은 1-based 이고 클래스 길이만큼만 덮는다. `endColumn` 은 `startColumn` + 클래스 길이,
   단위는 UTF-16 코드 유닛(`columnKind`)이다.
-- **`artifactLocation.uri`** 는 저장소 기준 상대 경로이고 POSIX 구분자이며 세그먼트 단위로
-  퍼센트 인코딩된다(공백 → `%20`, `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이
-  `GITHUB_WORKSPACE` 아래면 그 기준, 아니면 현재 디렉터리 기준 — `--format github` 의 `file=` 과
-  같은 규칙이다. 빌드 머신의 절대 경로는 로그에 들어가지 않는다.
-- **`partialFingerprints.twGhostClassV1`** 은 `클래스 + 파일` 의 SHA-256(16자리 hex)이다. 줄·열을
-  일부러 빼서, 코드가 이동해도 기존 경고가 닫히고 새 경고가 열리지 않게 한다. 그래서 한 파일 안의
-  같은 클래스 두 곳은 지문이 같다 — *partial* 지문의 목적이 그것이고, 나머지 식별은 위치가 한다.
+- **`artifactLocation.uri`** 는 POSIX 구분자이며 세그먼트 단위로 퍼센트 인코딩된다(공백 → `%20`,
+  `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이 `GITHUB_WORKSPACE` 아래면 그 기준, 아니면
+  현재 디렉터리 기준 — `--format github` 의 `file=` 과 같은 규칙이다. 빌드 머신의 절대 경로는
+  로그에 들어가지 않는다. cwd 폴백 때문에, `content` glob 이 스캔 디렉터리 위로 올라가고 workspace
+  가 그 파일을 덮지 않으면 `../` 경로가 나온다 — 그 대가는 아래 지문 항목에.
+- **`partialFingerprints` 를 넣지 않는다.** code scanning 이 읽는 partial fingerprint 는
+  [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object)
+  하나뿐이고, `upload-sarif` 가 그 키가 없는 result 마다 체크아웃된 소스에서 그것을 계산한다.
+  tw-ghost 자체 키를 넣으면 로그에 실려 가지만 GitHub 은 읽지 않는다 — action 이 지원 키를 붙이는
+  것을 막지는 않지만, 아무도 지키지 않는 추적 보장처럼 읽힌다. 그래서 아무것도 넣지 않는다.
+  지문 계산이 의존하는 것은 **action 이 파일로 되돌릴 수 있는 `uri`** 다. action 의
+  `resolveUriToFile` 은 `uriBaseId` 를 보지 않고, 퍼센트 인코딩을 디코딩한 뒤 상대 경로를 소스 루트에
+  붙인다. 즉 저장소 기준 URI 가 동작하는 이유는 저장소 기준이라서이고 `%SRCROOT%` 덕이 아니다(그쪽은
+  표시용이다). 스캔 루트 아래 파일에 대해 내보낸 모든 `uri` 가 그 방식으로 풀리는지 테스트가
+  단정한다. 위의 `../` 경로는 이 계약 밖이다: action 은 *절대* 경로만 소스 루트 밖인지 검사하므로
+  `../x` 를 그대로 붙여 거기 있는 파일 — 이웃 패키지의 파일일 수도 있다 — 을 잡고, code scanning 은
+  어차피 그 파일의 저장소 경로를 모른다.
+  실제 업로드로 측정했다. 한 파일에 `ghost-class` finding 13개(한 줄에 5개, 바이트 동일한 줄에 6개,
+  나머지 2개)를 넣어 서로 다른 `primaryLocationLineHash` 가 9개인 로그를 올렸더니 **13개 finding 이
+  13개 alert** 이 됐다 — alert 은 result 단위이므로 한 줄에 유령이 여럿이어도 뭉개지지 않는다. 그리고
+  블록 전체를 수정 없이 5줄 아래로 밀었을 때 **13개 alert 번호가 전부 유지**되고 새로 열린 것도,
+  은퇴한 것도 없었다.
 - **규칙은 그 실행이 낼 수 있는 것만 선언한다.** `ghost-class`(레벨 `error`)는 항상,
   `unknown-utility-like` 와 `unknown-variant`(둘 다 레벨 `note` 라 경고 심각도를 올리지 않는다)는
   `--unknown` 일 때만 선언되고, 그때만 결과도 나온다. 스키마상 쓰지 않는 규칙을 선언해도 되지만,
