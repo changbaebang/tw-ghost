@@ -255,9 +255,13 @@ describe('artifactLocation.uri encoding', () => {
 
 describe('partialFingerprints', () => {
   // Code scanning consumes exactly one partial fingerprint, `primaryLocationLineHash`, and
-  // `upload-sarif` computes it from the checked-out source when a result has none. A custom key of
-  // our own would ride along in the log and be ignored, reading as a tracking guarantee nothing
-  // honours. Emitting nothing is what makes the action fill in the key that is actually read.
+  // `upload-sarif` computes it from the checked-out source. A custom key of our own would ride along
+  // in the log and never be read, so documenting move-resilient tracking on it was a claim nothing
+  // honoured — that is the whole reason it is gone.
+  //
+  // Emitting nothing is *not* what enables the supported key: `locationUpdateCallback` looks only at
+  // `partialFingerprints.primaryLocationLineHash`, so the action would have added it alongside a
+  // custom key just the same. Removal takes away a false guarantee, not an obstacle.
   it('emits no partial fingerprints, leaving the supported key to upload-sarif', () => {
     const r = report({
       ghosts: [
@@ -275,8 +279,10 @@ describe('partialFingerprints', () => {
   // What the action needs from us in exchange: a `uri` it can turn back into a file on disk. Its
   // `resolveUriToFile` ignores `uriBaseId` entirely — it decodes the percent-encoding and joins a
   // relative path onto the source root — so our URIs work because they are repo-relative, not
-  // because of `%SRCROOT%`. If that ever stopped holding, the action would silently skip
-  // fingerprinting and every alert would be tracked by location alone.
+  // because of `%SRCROOT%`. If that stopped holding, the action would skip fingerprinting silently
+  // and every alert would be tracked by location alone.
+  //
+  // Scope: files *under* the scanned root. See the next test for the case that falls outside it.
   it('emits uris that resolve to real files the way upload-sarif resolves them', async () => {
     const root = fixture('replaced-scale');
     const analyzed = await analyze({ cwd: root, suggestions: false });
@@ -288,12 +294,41 @@ describe('partialFingerprints', () => {
       expect(uriBaseId).toBe(SARIF_URI_BASE_ID);
       expect(uri).toBeDefined();
       const decoded = decodeURIComponent(uri ?? '');
-      // Neither absolute nor escaping the root: `resolveUriToFile` drops both.
       expect(path.posix.isAbsolute(decoded)).toBe(false);
-      expect(decoded.startsWith('../')).toBe(false);
       expect(decoded).not.toContain('://');
       expect(existsSync(path.join(root, decoded))).toBe(true);
     }
+  });
+
+  // The boundary, pinned rather than asserted away. A `content` glob may reach above the scanned
+  // directory, and `relativizeFile` falls back to a cwd-relative path for anything the workspace
+  // does not cover — so tw-ghost really does emit `../`. Two things follow, and neither is a
+  // guarantee this format can make:
+  //
+  //   * the action does not reject it. It only drops *absolute* paths outside the source root; a
+  //     relative one is joined on and checked for existence, so `../x` resolves whenever something
+  //     happens to sit there — possibly a file from a sibling package rather than the one scanned.
+  //   * code scanning has no repo path for it either way.
+  //
+  // Out-of-root results are therefore outside the fingerprinting contract. In CI this is rare:
+  // `GITHUB_WORKSPACE` is the checkout root, so a file anywhere under it stays repo-relative even
+  // when the scan runs in a subdirectory. Whether tw-ghost should warn or refuse is a separate
+  // question from what it emits, so it is filed rather than decided here.
+  it('emits a cwd-relative ../ uri for a file the workspace does not cover', () => {
+    const r = report({ ghosts: [ghost('p-3', [['../shared/src/Button.tsx', 1, 1]])] });
+    const noWorkspace = formatSarif(r, { cwd: path.resolve('/repo/apps/web') }).log.runs[0];
+    expect(noWorkspace?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
+      '../shared/src/Button.tsx',
+    );
+
+    // With a workspace that *does* cover the file, it is repo-relative again — the CI case.
+    const withWorkspace = formatSarif(r, {
+      cwd: path.resolve('/repo/apps/web'),
+      workspace: path.resolve('/repo'),
+    }).log.runs[0];
+    expect(withWorkspace?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
+      'apps/shared/src/Button.tsx',
+    );
   });
 });
 

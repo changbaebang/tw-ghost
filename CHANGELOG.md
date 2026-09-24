@@ -28,9 +28,12 @@ All notable changes to this project are documented here. The format follows
   `message.text` naming the class, the declarations stock Tailwind would have set and up to 3 suggestions, a
   `physicalLocation` with a repo-relative percent-encoded `uri` under `uriBaseId: "%SRCROOT%"` and a 1-based
   `region` covering exactly the class. **No `partialFingerprints`**: code scanning reads only
-  `primaryLocationLineHash` and `upload-sarif` computes it from the source for results that carry none, so the
-  supported key is left to the action rather than shadowed by a custom one it ignores. That works because the
-  `uri` is repo-relative — the action's `resolveUriToFile` ignores `uriBaseId` — which a test now asserts.
+  `primaryLocationLineHash`, which `upload-sarif` computes from the source whenever a result lacks that key. A
+  custom key would not have blocked that, but it would be carried and never read — a tracking claim nothing
+  honours — so none is emitted. Fingerprinting depends on the `uri` resolving to a file: the action's
+  `resolveUriToFile` ignores `uriBaseId` and joins a relative path onto the source root, which a test asserts for
+  files under the scanned root. A `../` `uri` (a `content` glob above the scanned directory with no workspace
+  covering it) is outside that contract and is pinned by a test rather than guaranteed.
   Verified by upload: 13 findings in one file over 9 distinct line hashes became 13 alerts, and moving the block
   without editing it kept all 13 alert numbers. Exit codes unchanged; the
   one-line summary goes to stderr because stdout is redirected into the `.sarif` file.

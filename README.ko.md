@@ -234,20 +234,23 @@ jobs:
   들어간다(나머지는 `(+N more)` 로 센다).
 - **`region`** 은 1-based 이고 클래스 길이만큼만 덮는다. `endColumn` 은 `startColumn` + 클래스 길이,
   단위는 UTF-16 코드 유닛(`columnKind`)이다.
-- **`artifactLocation.uri`** 는 저장소 기준 상대 경로이고 POSIX 구분자이며 세그먼트 단위로
-  퍼센트 인코딩된다(공백 → `%20`, `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이
-  `GITHUB_WORKSPACE` 아래면 그 기준, 아니면 현재 디렉터리 기준 — `--format github` 의 `file=` 과
-  같은 규칙이다. 빌드 머신의 절대 경로는 로그에 들어가지 않는다.
+- **`artifactLocation.uri`** 는 POSIX 구분자이며 세그먼트 단위로 퍼센트 인코딩된다(공백 → `%20`,
+  `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이 `GITHUB_WORKSPACE` 아래면 그 기준, 아니면
+  현재 디렉터리 기준 — `--format github` 의 `file=` 과 같은 규칙이다. 빌드 머신의 절대 경로는
+  로그에 들어가지 않는다. cwd 폴백 때문에, `content` glob 이 스캔 디렉터리 위로 올라가고 workspace
+  가 그 파일을 덮지 않으면 `../` 경로가 나온다 — 그 대가는 아래 지문 항목에.
 - **`partialFingerprints` 를 넣지 않는다.** code scanning 이 읽는 partial fingerprint 는
   [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object)
-  하나뿐이고, `upload-sarif` 가 지문 없는 result 마다 체크아웃된 소스에서 그것을 계산한다. 그래서
-  tw-ghost 는 아무것도 넣지 않고 실제로 소비되는 키를 action 이 채우게 한다. 자체 키를 넣으면 로그에
-  실려 가지만 GitHub 이 무시하므로 없는 것보다 나쁘다 — 아무도 지키지 않는 추적 보장처럼 읽힌다.
-  대신 action 이 우리에게 요구하는 것은 **파일로 되돌릴 수 있는 `uri`** 다. action 의
+  하나뿐이고, `upload-sarif` 가 그 키가 없는 result 마다 체크아웃된 소스에서 그것을 계산한다.
+  tw-ghost 자체 키를 넣으면 로그에 실려 가지만 GitHub 은 읽지 않는다 — action 이 지원 키를 붙이는
+  것을 막지는 않지만, 아무도 지키지 않는 추적 보장처럼 읽힌다. 그래서 아무것도 넣지 않는다.
+  지문 계산이 의존하는 것은 **action 이 파일로 되돌릴 수 있는 `uri`** 다. action 의
   `resolveUriToFile` 은 `uriBaseId` 를 보지 않고, 퍼센트 인코딩을 디코딩한 뒤 상대 경로를 소스 루트에
-  붙인다. 즉 위 URI 가 동작하는 이유는 **저장소 기준 상대 경로**라서이고 `%SRCROOT%` 덕이 아니다
-  (그쪽은 표시용이다). 내보낸 모든 `uri` 가 그 방식으로 풀리는지 테스트가 단정한다 — 깨지면 action 은
-  조용히 지문을 건너뛴다.
+  붙인다. 즉 저장소 기준 URI 가 동작하는 이유는 저장소 기준이라서이고 `%SRCROOT%` 덕이 아니다(그쪽은
+  표시용이다). 스캔 루트 아래 파일에 대해 내보낸 모든 `uri` 가 그 방식으로 풀리는지 테스트가
+  단정한다. 위의 `../` 경로는 이 계약 밖이다: action 은 *절대* 경로만 소스 루트 밖인지 검사하므로
+  `../x` 를 그대로 붙여 거기 있는 파일 — 이웃 패키지의 파일일 수도 있다 — 을 잡고, code scanning 은
+  어차피 그 파일의 저장소 경로를 모른다.
   실제 업로드로 측정했다. 한 파일에 `ghost-class` finding 13개(한 줄에 5개, 바이트 동일한 줄에 6개,
   나머지 2개)를 넣어 서로 다른 `primaryLocationLineHash` 가 9개인 로그를 올렸더니 **13개 finding 이
   13개 alert** 이 됐다 — alert 은 result 단위이므로 한 줄에 유령이 여럿이어도 뭉개지지 않는다. 그리고
