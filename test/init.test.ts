@@ -231,7 +231,7 @@ describe('renderWorkflow', () => {
         .filter(Boolean),
     ).toEqual([
       'code=0',
-      'npx tw-ghost@0.3.0 --format sarif > tw-ghost.sarif || code=$?',
+      `npx tw-ghost@${VERSION} --format sarif > tw-ghost.sarif || code=$?`,
       'echo "code=$code" >> "$GITHUB_OUTPUT"',
       'exit "$code"',
     ]);
