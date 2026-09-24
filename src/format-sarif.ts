@@ -122,6 +122,12 @@ export interface SarifFormatResult {
   log: SarifLog;
   /** One line for stderr — stdout is usually redirected into a `.sarif` file. */
   summary: string;
+  /**
+   * Conditions that degrade what code scanning can do with this log, one line each, for stderr.
+   * The results they describe are still in the log: a ghost outside the scanned root is still a
+   * ghost, and dropping it would leave the check red with no alert to show for it.
+   */
+  warnings: string[];
 }
 
 export const SARIF_SCHEMA_URI = 'https://json.schemastore.org/sarif-2.1.0.json';
@@ -216,9 +222,40 @@ function ghostMessage(g: GhostFinding): string {
   return `${g.class} produces no CSS in this Tailwind config${stock} — try: ${shown.join(', ')}${more}`;
 }
 
-function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOptions): SarifRun {
+/** `relativizeFile` output that leaves the root it was made relative to. */
+const escapesRoot = (posixRel: string): boolean => posixRel === '..' || posixRel.startsWith('../');
+
+/**
+ * Why a `../` uri is worth a warning, in one line. Code scanning keys alerts to repository paths,
+ * so it cannot place this one; and `upload-sarif` joins a relative uri onto the source root and
+ * fingerprints whatever exists there, which may be a different file than the one scanned.
+ */
+function outsideRootWarning(outside: ReadonlyMap<string, number>): string {
+  const results = [...outside.values()].reduce((n, c) => n + c, 0);
+  const [example] = outside.keys();
+  return (
+    `${plural(results, 'SARIF result')} in ${plural(outside.size, 'file')} point outside the ` +
+    `scanned root (e.g. ${example}). Code scanning cannot map them to a repository file, and ` +
+    `upload-sarif may fingerprint them from whatever sits at that path. Run from the repository ` +
+    `root, or set GITHUB_WORKSPACE, so they become repo-relative.`
+  );
+}
+
+interface BuiltRun {
+  run: SarifRun;
+  /** Relativized paths that escaped the root, with how many results point at each. */
+  outsideRoot: Map<string, number>;
+}
+
+function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOptions): BuiltRun {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const workspace = options.workspace ?? process.env.GITHUB_WORKSPACE;
+  const outsideRoot = new Map<string, number>();
+  const uriFor = (file: string): string => {
+    const rel = relativizeFile(file, cwd, workspace);
+    if (escapesRoot(rel)) outsideRoot.set(rel, (outsideRoot.get(rel) ?? 0) + 1);
+    return encodeUriPath(rel);
+  };
   const version = options.version ?? VERSION;
   const declared = new Map(
     rules.map((rule, index) => [rule.id, { index, level: rule.defaultConfiguration.level }]),
@@ -244,7 +281,7 @@ function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOption
       {
         physicalLocation: {
           artifactLocation: {
-            uri: encodeUriPath(relativizeFile(loc.file, cwd, workspace)),
+            uri: uriFor(loc.file),
             uriBaseId: SARIF_URI_BASE_ID,
           },
           region: {
@@ -275,7 +312,7 @@ function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOption
 
   const automation =
     options.automationId === undefined ? {} : { automationDetails: { id: options.automationId } };
-  return {
+  const run: SarifRun = {
     tool: {
       driver: {
         name: SARIF_TOOL_NAME,
@@ -289,6 +326,7 @@ function buildRun(report: Report, rules: SarifRule[], options: SarifFormatOption
     columnKind: 'utf16CodeUnits',
     results,
   };
+  return { run, outsideRoot };
 }
 
 const plural = (n: number, word: string, many = `${word}s`): string =>
@@ -313,10 +351,11 @@ function summaryLine(
 
 /** A SARIF 2.1.0 log with a single run, for one Tailwind config. */
 export function formatSarif(report: Report, options: SarifFormatOptions = {}): SarifFormatResult {
-  const run = buildRun(report, sarifRules(options.unknown === true), options);
+  const { run, outsideRoot } = buildRun(report, sarifRules(options.unknown === true), options);
   return {
     log: { $schema: SARIF_SCHEMA_URI, version: SARIF_VERSION, runs: [run] },
     summary: summaryLine(report.ghosts.length, occurrencesOf(report), [run]),
+    warnings: outsideRoot.size > 0 ? [outsideRootWarning(outsideRoot)] : [],
   };
 }
 
@@ -363,16 +402,21 @@ export function formatSarifMany(
   options: SarifFormatOptions = {},
 ): SarifFormatResult {
   const reports = multi.configs.filter((e): e is ConfigReport => !isConfigFailure(e));
-  const runs = reports.map((entry) =>
-    buildRun(entry, sarifRules(options.unknown === true), {
+  const built = reports.map((entry) => ({
+    config: entry.config,
+    ...buildRun(entry, sarifRules(options.unknown === true), {
       ...options,
       automationId: automationIdFor(entry.config),
     }),
-  );
+  }));
+  const runs = built.map((b) => b.run);
   const ghosts = reports.reduce((n, entry) => n + entry.ghosts.length, 0);
   const occurrences = reports.reduce((n, entry) => n + occurrencesOf(entry), 0);
   return {
     log: { $schema: SARIF_SCHEMA_URI, version: SARIF_VERSION, runs },
     summary: summaryLine(ghosts, occurrences, runs, reports.length),
+    warnings: built
+      .filter((b) => b.outsideRoot.size > 0)
+      .map((b) => `[${b.config}] ${outsideRootWarning(b.outsideRoot)}`),
   };
 }

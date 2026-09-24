@@ -33,7 +33,10 @@ All notable changes to this project are documented here. The format follows
   honours — so none is emitted. Fingerprinting depends on the `uri` resolving to a file: the action's
   `resolveUriToFile` ignores `uriBaseId` and joins a relative path onto the source root, which a test asserts for
   files under the scanned root. A `../` `uri` (a `content` glob above the scanned directory with no workspace
-  covering it) is outside that contract and is pinned by a test rather than guaranteed.
+  covering it) is outside that contract: the result is **kept** — the ghost is real — and one stderr warning per
+  run names how many results and files point outside the root, what code scanning cannot do with them, and that
+  running from the repository root or setting `GITHUB_WORKSPACE` makes them repo-relative. `formatSarif()` /
+  `formatSarifMany()` return those lines as `warnings`. The exit code is unaffected.
   Verified by upload: 13 findings in one file over 9 distinct line hashes became 13 alerts, and moving the block
   without editing it kept all 13 alert numbers. Exit codes unchanged; the
   one-line summary goes to stderr because stdout is redirected into the `.sarif` file.

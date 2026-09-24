@@ -286,8 +286,10 @@ describe('partialFingerprints', () => {
   it('emits uris that resolve to real files the way upload-sarif resolves them', async () => {
     const root = fixture('replaced-scale');
     const analyzed = await analyze({ cwd: root, suggestions: false });
-    const results = formatSarif(analyzed, { cwd: root }).log.runs[0]?.results ?? [];
+    const formatted = formatSarif(analyzed, { cwd: root });
+    const results = formatted.log.runs[0]?.results ?? [];
     expect(results.length).toBeGreaterThan(0);
+    expect(formatted.warnings).toEqual([]);
 
     for (const result of results) {
       const { uri, uriBaseId } = result.locations[0]?.physicalLocation.artifactLocation ?? {};
@@ -314,21 +316,40 @@ describe('partialFingerprints', () => {
   // `GITHUB_WORKSPACE` is the checkout root, so a file anywhere under it stays repo-relative even
   // when the scan runs in a subdirectory. Whether tw-ghost should warn or refuse is a separate
   // question from what it emits, so it is filed rather than decided here.
-  it('emits a cwd-relative ../ uri for a file the workspace does not cover', () => {
-    const r = report({ ghosts: [ghost('p-3', [['../shared/src/Button.tsx', 1, 1]])] });
-    const noWorkspace = formatSarif(r, { cwd: path.resolve('/repo/apps/web') }).log.runs[0];
-    expect(noWorkspace?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
-      '../shared/src/Button.tsx',
+  it('keeps a ../ result for a file the workspace does not cover, and warns once about it', () => {
+    const r = report({
+      ghosts: [
+        ghost('p-3', [
+          ['../shared/src/Button.tsx', 1, 1],
+          ['../shared/src/Button.tsx', 9, 1],
+        ]),
+        ghost('text-sm', [['src/Page.tsx', 3, 1]]),
+      ],
+    });
+    const noWorkspace = formatSarif(r, { cwd: path.resolve('/repo/apps/web') });
+    const uris = noWorkspace.log.runs[0]?.results.map(
+      (x) => x.locations[0]?.physicalLocation.artifactLocation.uri,
     );
+    // Kept, not dropped: a ghost outside the root is still a ghost, and dropping it would leave
+    // the check red with no alert to show for it.
+    expect(uris).toEqual(['../shared/src/Button.tsx', '../shared/src/Button.tsx', 'src/Page.tsx']);
+    // One warning for the run, counting results and files, naming an example, and saying what it
+    // costs in code scanning and how to make it go away.
+    expect(noWorkspace.warnings).toHaveLength(1);
+    expect(noWorkspace.warnings[0]).toContain('2 SARIF results in 1 file point outside');
+    expect(noWorkspace.warnings[0]).toContain('(e.g. ../shared/src/Button.tsx)');
+    expect(noWorkspace.warnings[0]).toContain('set GITHUB_WORKSPACE');
 
-    // With a workspace that *does* cover the file, it is repo-relative again — the CI case.
+    // With a workspace that *does* cover the file, it is repo-relative again — the CI case — and
+    // there is nothing to warn about.
     const withWorkspace = formatSarif(r, {
       cwd: path.resolve('/repo/apps/web'),
       workspace: path.resolve('/repo'),
-    }).log.runs[0];
-    expect(withWorkspace?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
-      'apps/shared/src/Button.tsx',
-    );
+    });
+    expect(
+      withWorkspace.log.runs[0]?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri,
+    ).toBe('apps/shared/src/Button.tsx');
+    expect(withWorkspace.warnings).toEqual([]);
   });
 });
 
@@ -373,6 +394,26 @@ describe('formatSarifMany: one run per config', () => {
       log.runs.map((r) => r.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri),
     ).toEqual(['apps/web/src/Page.tsx', 'apps/admin/src/Page.tsx']);
     expect(log.runs.every((r) => r.tool.driver.rules[0]?.id === GHOST_RULE_ID)).toBe(true);
+  });
+
+  it('prefixes an out-of-root warning with the config it came from', () => {
+    const { warnings } = formatSarifMany(
+      multi([
+        {
+          config: 'apps/web/tailwind.config.ts',
+          ...report({ ghosts: [ghost('p-3', [['../outside/a.tsx', 1, 1]])] }),
+        },
+        {
+          config: 'apps/admin/tailwind.config.js',
+          ...report({ ghosts: [ghost('p-3', [['apps/admin/src/Page.tsx', 1, 1]])] }),
+        },
+      ]),
+      { ...opts, cwd: path.resolve('/repo') },
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.startsWith('[apps/web/tailwind.config.ts] 1 SARIF result in 1 file')).toBe(
+      true,
+    );
   });
 
   it('skips configs that failed to load and counts the rest', () => {

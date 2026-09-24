@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CLI, fixture } from './helpers.js';
+import { CLI, fixture, ROOT } from './helpers.js';
 
 function run(args: string[], cwd: string) {
   // Strip the real Actions environment so `--format github` output is cwd-relative here;
@@ -623,6 +623,25 @@ describe('cli: several configs with --format sarif', () => {
       code: 2,
       ids: both,
     });
+  });
+
+  it('warns on stderr, but still reports, a ghost whose file is outside the scanned root', () => {
+    // apps/web's content glob reaches ../../packages/shared. Scanned from apps/web with no
+    // GITHUB_WORKSPACE (the `run` helper strips it), that file can only be cwd-relative.
+    const { code, stdout, stderr } = run(
+      ['--format', 'sarif', '--no-suggestions', '--tailwind', ROOT],
+      path.join(fixture('monorepo'), 'apps/web'),
+    );
+    expect(code).toBe(1); // ghosts were found; the warning does not change the verdict
+    const uris = JSON.parse(stdout).runs[0].results.map(
+      (r: { locations: Array<{ physicalLocation: { artifactLocation: { uri: string } } }> }) =>
+        r.locations[0]?.physicalLocation.artifactLocation.uri,
+    );
+    expect(uris).toContain('../../packages/shared/src/Button.tsx'); // kept
+    expect(stderr).toMatch(
+      /tw-ghost: warning: 1 SARIF result in 1 file point outside the scanned root \(e\.g\. \.\.\/\.\.\/packages\/shared\/src\/Button\.tsx\)/,
+    );
+    expect(stderr).toContain('set GITHUB_WORKSPACE');
   });
 
   it('names a multi-config request that matched only one config, identically to the multi run', () => {

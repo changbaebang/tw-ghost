@@ -237,8 +237,14 @@ jobs:
 - **`artifactLocation.uri`** 는 POSIX 구분자이며 세그먼트 단위로 퍼센트 인코딩된다(공백 → `%20`,
   `#` → `%23`). `uriBaseId` 는 `"%SRCROOT%"`. 파일이 `GITHUB_WORKSPACE` 아래면 그 기준, 아니면
   현재 디렉터리 기준 — `--format github` 의 `file=` 과 같은 규칙이다. 빌드 머신의 절대 경로는
-  로그에 들어가지 않는다. cwd 폴백 때문에, `content` glob 이 스캔 디렉터리 위로 올라가고 workspace
-  가 그 파일을 덮지 않으면 `../` 경로가 나온다 — 그 대가는 아래 지문 항목에.
+  로그에 들어가지 않는다.
+  cwd 폴백 때문에, `content` glob 이 스캔 디렉터리 위로 올라가고 workspace 가 그 파일을 덮지 않으면
+  `../` 경로가 나온다. **그 result 는 남기고, tw-ghost 는 run 마다 한 번 stderr 로 경고한다**
+  (`N SARIF results in M files point outside the scanned root (e.g. …)`). 남기는 이유는 그 유령이
+  진짜라서다 — 빼면 체크는 붉은데 보여줄 alert 이 없다. 경고하는 이유는 code scanning 이 `../` uri 를
+  저장소 파일에 대응시킬 수 없고, `upload-sarif` 가 그 경로에 있는 무엇이든으로 지문을 계산할 수 있기
+  때문이다(아래 참고). 경고는 종료 코드를 바꾸지 않는다. 저장소 루트에서 실행하거나
+  `GITHUB_WORKSPACE` 를 설정하면 경로가 저장소 기준이 되고 경고도 사라진다.
 - **`partialFingerprints` 를 넣지 않는다.** code scanning 이 읽는 partial fingerprint 는
   [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object)
   하나뿐이고, `upload-sarif` 가 그 키가 없는 result 마다 체크아웃된 소스에서 그것을 계산한다.
