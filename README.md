@@ -238,9 +238,17 @@ The log looks like this, trimmed to one result:
 - **`artifactLocation.uri`** is POSIX and percent-encoded per segment (a space becomes `%20`, `#`
   becomes `%23`), under `uriBaseId: "%SRCROOT%"`. It is relative to `GITHUB_WORKSPACE` when the
   file lives under it, else to the current directory — the same rule `--format github` uses for
-  `file=`. No absolute path from the build machine reaches the log. The cwd fallback means a
-  `content` glob that reaches above the scanned directory yields a `../` path when no workspace
-  covers the file; see the fingerprint note below for what that costs.
+  `file=`. No absolute path from the build machine reaches the log.
+  The cwd fallback means a `content` glob that reaches above the scanned directory yields a `../`
+  path when no workspace covers the file — and on Windows, a file on another drive or a UNC share
+  comes back as an absolute `D:/…` or `//server/…` path instead, since there is no common root to
+  climb to. **Either result is kept, and tw-ghost warns once per run
+  on stderr** (`N SARIF results in M files point outside the scanned root (e.g. …)`). It is kept
+  because the ghost is real — dropping it would leave the check red with no alert to show for it —
+  and warned about because code scanning cannot map a `../` uri to a repository file, and
+  `upload-sarif` may fingerprint it from whatever sits at that path (see below). The warning does
+  not change the exit code. A file outside the repository cannot be represented at all; for one inside it, run from the
+  repository root or set `GITHUB_WORKSPACE`, and the path becomes repo-relative and the warning goes away.
 - **No `partialFingerprints`.** Code scanning reads exactly one partial fingerprint,
   [`primaryLocationLineHash`](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support#result-object),
   and `upload-sarif` computes it from the checked-out source whenever a result lacks that key. A

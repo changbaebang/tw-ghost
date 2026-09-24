@@ -164,6 +164,9 @@ async function runMany(
     // One run per config; configs that failed to load contribute no run (they are already on
     // stderr above and already force exit 2).
     const sarif = formatSarifMany(multi, { unknown: analyzeOptions.unknown });
+    for (const warning of sarif.warnings) {
+      process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
+    }
     process.stderr.write(`${sarif.summary}\n`);
     return exitAfterWrite(process.stdout, `${JSON.stringify(sarif.log, null, 2)}\n`, code);
   }
@@ -394,6 +397,9 @@ async function main(): Promise<never> {
       unknown: values.unknown,
       automationId: multiAutomationId,
     });
+    for (const warning of sarif.warnings) {
+      process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
+    }
     process.stderr.write(`${sarif.summary}\n`);
     output = `${JSON.stringify(sarif.log, null, 2)}\n`;
   } else {

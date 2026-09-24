@@ -22,6 +22,14 @@ export const BOM = '\uFEFF';
 export const toPosix = (p: string): string => p.split(path.sep).join('/');
 
 /**
+ * Does a POSIX-normalized *relative* path leave the directory it is relative to? Compared by
+ * segment: `..` and `../x` climb; `..shared/x` is a directory whose name happens to start with two
+ * dots and stays inside. A `startsWith('..')` test conflates the two.
+ */
+export const climbsOut = (posixRel: string): boolean =>
+  posixRel === '..' || posixRel.startsWith('../');
+
+/**
  * A glob pattern tinyglobby can actually use.
  *
  * Glob patterns are POSIX: tinyglobby (picomatch) reads `\` as an escape character, never as a

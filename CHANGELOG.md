@@ -32,8 +32,12 @@ All notable changes to this project are documented here. The format follows
   custom key would not have blocked that, but it would be carried and never read — a tracking claim nothing
   honours — so none is emitted. Fingerprinting depends on the `uri` resolving to a file: the action's
   `resolveUriToFile` ignores `uriBaseId` and joins a relative path onto the source root, which a test asserts for
-  files under the scanned root. A `../` `uri` (a `content` glob above the scanned directory with no workspace
-  covering it) is outside that contract and is pinned by a test rather than guaranteed.
+  files under the scanned root. A `uri` outside the scanned root — `../` when a `content` glob climbs above the scanned directory with no
+  workspace covering it, or on Windows an absolute `D:/…` / `//server/…` when the file is on another drive or
+  UNC share — is outside that contract: the result is **kept** — the ghost is real — and one stderr warning per
+  run names how many results and files point outside the root, what code scanning cannot do with them, and that
+  running from the repository root or setting `GITHUB_WORKSPACE` makes them repo-relative. `formatSarif()` /
+  `formatSarifMany()` return those lines as `warnings`. The exit code is unaffected. Inside/outside is decided by path segment, so a repository directory whose name starts with `..` (`..shared/`) is inside — previously a `startsWith('..')` test sent it down the cwd-relative fallback, which also mis-shaped `--format github`'s `file=` for such paths.
   Verified by upload: 13 findings in one file over 9 distinct line hashes became 13 alerts, and moving the block
   without editing it kept all 13 alert numbers. Exit codes unchanged; the
   one-line summary goes to stderr because stdout is redirected into the `.sarif` file.
