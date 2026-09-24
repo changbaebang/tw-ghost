@@ -29,7 +29,11 @@ export {
   formatFix,
   parseFixMap,
 } from './fix.js';
-export { formatGithub, type GithubFormatOptions, type GithubFormatResult } from './format-github.js';
+export {
+  formatGithub,
+  type GithubFormatOptions,
+  type GithubFormatResult,
+} from './format-github.js';
 export {
   formatSarif,
   formatSarifMany,

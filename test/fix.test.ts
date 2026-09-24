@@ -2,13 +2,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  applyFixMap,
-  applyFixMapToText,
-  draftFixMap,
-  parseFixMap,
-  replacementFor,
-} from '../src/index.js';
+import { replacementFor } from '../src/fix.js';
+import { applyFixMap, applyFixMapToText, draftFixMap, parseFixMap } from '../src/index.js';
 
 describe('parseFixMap', () => {
   it('accepts bare utility → string | null and drops identity entries', () => {
