@@ -185,8 +185,8 @@ jobs:
       "tool": {
         "driver": {
           "name": "tw-ghost",
-          "version": "0.3.0",
-          "semanticVersion": "0.3.0",
+          "version": "0.4.0",
+          "semanticVersion": "0.4.0",
           "informationUri": "https://github.com/changbaebang/tw-ghost#readme",
           "rules": [
             {
@@ -614,7 +614,7 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "configs": [
     {
       "config": "apps/admin/tailwind.config.js",
