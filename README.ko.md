@@ -904,7 +904,6 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
 
 ## 로드맵
 
-- SARIF 출력.
 - 파일 단위 `// tw-ghost-ignore` 주석.
 - 경로 범위를 지정한 `--fix-map` (공유 맵으로 모노레포의 앱 하나만 고치기).
 - CSS 파일 내 `@apply` 의 제대로 된 처리 (지금은 glob 에 포함되면 일반 텍스트로 스캔된다).
