@@ -638,8 +638,12 @@ describe('cli: several configs with --format sarif', () => {
         r.locations[0]?.physicalLocation.artifactLocation.uri,
     );
     expect(uris).toContain('../../packages/shared/src/Button.tsx'); // kept
-    expect(stderr).toMatch(
-      /tw-ghost: warning: 1 SARIF result in 1 file point outside the scanned root \(e\.g\. \.\.\/\.\.\/packages\/shared\/src\/Button\.tsx\)/,
+    // Asserted in two pieces on purpose. The prefix is coloured by picocolors, which turns colour
+    // on whenever `CI` is in the environment — so on a runner there is an ANSI reset between
+    // `warning:` and the message, and one assertion spanning both passes locally and fails in CI.
+    expect(stderr).toContain('tw-ghost: warning:');
+    expect(stderr).toContain(
+      '1 SARIF result in 1 file point outside the scanned root (e.g. ../../packages/shared/src/Button.tsx)',
     );
     expect(stderr).toContain('set GITHUB_WORKSPACE');
   });
