@@ -384,18 +384,23 @@ describe('isOutsideRoot', () => {
     }
   });
 
-  // Only a Windows runner can put a real file on another drive than the scan: windows-latest keeps
-  // the checkout on D:\ and the OS on C:\. Elsewhere `C:\Windows\win.ini` is just a relative name.
+  // Only on Windows does `path.resolve` accept a drive letter, so only there can the scan root and a
+  // finding sit on different drives. The other drive is chosen from the checkout's own — D: on
+  // windows-latest, C: on most local machines — so this holds in both places. The file need not
+  // exist: `formatSarif` relativizes paths, it does not read them.
   it.runIf(process.platform === 'win32')(
     'warns end to end for a file on another drive than the scanned root',
     () => {
-      const r = report({ ghosts: [ghost('p-3', [['C:\\Windows\\win.ini', 1, 1]])] });
-      const out = formatSarif(r, { cwd: fixture('replaced-scale') });
+      const cwd = fixture('replaced-scale');
+      const drive = path.parse(cwd).root.slice(0, 1).toUpperCase();
+      const other = drive === 'C' ? 'D' : 'C';
+      const r = report({ ghosts: [ghost('p-3', [[`${other}:\\elsewhere\\Button.tsx`, 1, 1]])] });
+      const out = formatSarif(r, { cwd });
       expect(out.log.runs[0]?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
-        'C%3A/Windows/win.ini',
+        `${other}%3A/elsewhere/Button.tsx`,
       );
       expect(out.warnings).toHaveLength(1);
-      expect(out.warnings[0]).toContain('(e.g. C:/Windows/win.ini)');
+      expect(out.warnings[0]).toContain(`(e.g. ${other}:/elsewhere/Button.tsx)`);
     },
   );
 });
