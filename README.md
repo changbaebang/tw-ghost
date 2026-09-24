@@ -420,6 +420,29 @@ npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.
 tw-ghost drives **your project's own `tailwindcss`** through its public `loadConfig` /
 `resolveConfig` entry points and PostCSS. Everything below follows from that.
 
+### What is stable
+
+tw-ghost is on the road to 1.0, and 1.0 means one thing: **these surfaces do not break without a major
+version.**
+
+- The CLI: every documented flag, its meaning, and the exit codes `0` / `1` / `2`.
+- `--json`: keys may be added in a minor; none removed or re-typed outside a major.
+- `--format sarif`: valid SARIF 2.1.0 with the run/result shape documented above; `automationDetails.id`
+  derivation and the upload-gate contract of the generated workflow.
+- `--format github`: one `::error` per occurrence, `file=` repo-relative under `GITHUB_WORKSPACE`.
+- The ESLint rule `tw-ghost/no-ghost-class` and its options.
+- The programmatic API **as documented on this page** — everything under *Programmatic API*, the init,
+  SARIF and fix-map functions named in their sections, and `createLiveClassifier`. A symbol that is not
+  documented here is internal: it is not exported from `tw-ghost` and can change in any release.
+
+**Deprecation.** Something leaving the stable surface is first deprecated — a runtime warning where
+one is possible, a note here and in the changelog — for at least one minor release before a major
+removes it.
+
+**Tailwind line.** The 1.x line is Tailwind CSS 3.3–3.4. Tailwind v4 has no `tailwind.config.*`, so
+the "generate and compare" core would have to be rebuilt on a different API; if that happens it is a
+new major line, not a 1.x minor.
+
 ### Support matrix
 
 | Area | Status | Notes |
@@ -577,7 +600,7 @@ Note that `text-sm` has **4** occurrences although the file also contains `md:ho
 occurrences are whole tokens, so a candidate is never counted inside a longer class
 (`md:text-sm`, `legacy-text-sm`, `p-30`, `!p-3`, `-p-3`, `p-3.5`, `text-sm/50`).
 
-`--json` (shape is stable across patch releases; new keys may be added, none removed):
+`--json` (shape is stable across **minor** releases: keys may be added in a minor, never removed or re-typed outside a major):
 
 ```json
 {
@@ -948,7 +971,7 @@ unknowns → 20 listed, of which roughly two thirds were genuine typos or dead t
 - Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
   include them).
 - Cache candidate extraction between runs for very large monorepos.
-- Tailwind v4 support if a comparable "generate and compare" path becomes available.
+- Tailwind v4 support if a comparable "generate and compare" path becomes available. That would be a new major line; 1.x stays on Tailwind 3.3–3.4.
 
 ## Development & release
 
