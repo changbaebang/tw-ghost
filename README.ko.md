@@ -419,8 +419,8 @@ tw-ghost 는 1.0 을 향해 가고 있고, 1.0 의 뜻은 하나다: **이 표�
 - `--format github`: occurrence 당 `::error` 하나, `GITHUB_WORKSPACE` 기준 상대 경로의 `file=`.
 - ESLint 룰 `tw-ghost/no-ghost-class` 와 그 옵션.
 - **이 문서에 적힌 대로의** 프로그래매틱 API — *프로그래매틱 API* 절 전체, 각 절에서 이름을 밝힌
-  init·SARIF·fix-map 함수들, `createLiveClassifier`. 여기 문서화되지 않은 심볼은 내부용이다:
-  `tw-ghost` 에서 export 되지 않고 어느 릴리스에서든 바뀔 수 있다.
+  init·SARIF·fix-map 함수들, `createLiveClassifier`. 여기 문서화되지 않은 심볼은 내부용이며 이 계약 밖이다:
+  어느 릴리스에서든 바뀔 수 있다.
 
 **폐기.** 안정 표면에서 무언가를 빼려면 먼저 폐기 표시를 한다 — 가능한 곳엔 런타임 경고, 여기와
 CHANGELOG 에 메모 — 그리고 최소 한 minor 릴리스 뒤 major 에서 제거한다.

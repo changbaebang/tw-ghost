@@ -433,7 +433,7 @@ version.**
 - The ESLint rule `tw-ghost/no-ghost-class` and its options.
 - The programmatic API **as documented on this page** — everything under *Programmatic API*, the init,
   SARIF and fix-map functions named in their sections, and `createLiveClassifier`. A symbol that is not
-  documented here is internal: it is not exported from `tw-ghost` and can change in any release.
+  documented here is internal and outside this contract: it can change in any release.
 
 **Deprecation.** Something leaving the stable surface is first deprecated — a runtime warning where
 one is possible, a note here and in the changelog — for at least one minor release before a major
