@@ -6,10 +6,42 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+The 1.0 preparation line. Two entries below are breaking (Node floor, public entry), so the next release is a
+minor: **0.5.0**. From there the plan is a soak on 0.5.x with no breaking changes, then a 1.0.0 that is the same
+code with the version and README changed — 1.0 is a statement that the surfaces named under *What is stable* in the
+README do not break without a major, not a feature release.
+
+### Added
+
+- **`--format github` warns about findings whose file left the scanned root**, the same way `--format sarif` has
+  since 0.4.0 — the annotation is kept, the exit code is unchanged, and one stderr line per run names how many
+  annotations and files point outside the root, that GitHub cannot attach an annotation to a file outside the
+  repository (so they appear only in the job log), and that running from the repository root or setting
+  `GITHUB_WORKSPACE` makes the paths repo-relative. `formatGithub()` returns those lines as `warnings`, like
+  `formatSarif()`. The inside/outside test and the warning text are now one definition shared by both formats.
+- **README: *What is stable***, ahead of the support matrix, in English and Korean — the surfaces 1.0 will freeze
+  (CLI flags and exit codes, `--json`, the SARIF shape with its `automationDetails.id` and upload-gate contracts,
+  `--format github`, the ESLint rule's options, the programmatic API as documented), the deprecation policy (a
+  runtime warning where possible plus a note in the README and here, for at least one minor before a major removes
+  anything), and the Tailwind line (1.x is Tailwind 3.3–3.4; v4 would be a new major, not a minor).
+- **`test/json-contract.test.ts`** pins every document the CLI writes under `--json` — single and multi analysis,
+  single and multi `--env`, `init --json`, `--fix-map --json` — top-level and nested keys, and that `version` is the
+  first key of each. **`test/public-api.test.ts`** pins the public entry: 33 runtime values and 48 types, as the
+  type checker sees `src/index.ts`, and checks every value against the README.
+
+### Changed
+
+- **Node.js ≥ 22** (`engines`), CI on 22 and 24; **breaking**. Node 20 reached end-of-life on 2026-04-30 and
+  starting the 1.0 line on it would have meant carrying it until 2.0. The workflow that `tw-ghost init` writes pins
+  `setup-node` to 22 for the same reason.
+- **`--json` is stable across minor releases**, not only across patches: a key may be added in a minor; none is
+  removed or re-typed outside a major. (README, *Output example* and *What is stable*.)
+
 ### Removed
 
-- **35 runtime exports left the public entry** (`tw-ghost`). The rule is now *exported iff the README names it*,
-  pinned by `test/public-api.test.ts`. None of these was documented in the README; the 0.4.0 notes listed a few
+- **35 runtime exports left the public entry** (`tw-ghost`); **breaking**. The rule is now *a runtime value is
+  exported iff the README names it* — types are not held to the README (each is reachable from a documented value's
+  signature) but their set is frozen — pinned by `test/public-api.test.ts`. None of these was documented in the README; the 0.4.0 notes listed a few
   (`automationIdFor`, `configLabel`, `isMultiConfigRequest`, `sarifRules`, the `SARIF_*` constants) as programmatic
   API, and for those this is a breaking change. Removed: `CORE_UTILITY_ROOTS`, `collectRoots`, `DEFAULT_SEPARATOR`,
   `isPlausibleVariantChain`, `stripModifiers`, `utilityPart`, `utilityRoot`, `describeProject`, `formatEnv`,
@@ -24,6 +56,13 @@ All notable changes to this project are documented here. The format follows
   rule ids `ghost-class` / `unknown-utility-like` / `unknown-variant`); the version range is `tailwindcss` `^3.3.0`
   as declared in `peerDependencies`. Anything else had no documented use — if you relied on one, open an issue with
   the use case.
+
+### Security
+
+- Transitive **esbuild ≥ 0.28.1** via `pnpm.overrides` (`^0.28.1`), closing the dependabot advisory on 0.27.x
+  (arbitrary file read from esbuild's dev server on Windows). Development-only: esbuild is pulled in by `tsup` and
+  `vite`/`vitest` and does not ship in the package, so users were never exposed. The override holds `tsup` above its
+  declared `^0.27.0`; CI's build step is the compatibility check, and the override goes when tsup moves its range.
 
 ## [0.4.0] - 2026-09-24
 
