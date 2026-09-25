@@ -71,7 +71,7 @@ export default {
   참고) 모두 실제 CSS 출력으로 판정한다. CLI 는 Biome / oxlint 팀을 위해 린터 독립적으로 남는다.
 - 런타임에 동적으로 조립되는 클래스(`` `text-${size}` ``)는 찾지 못한다. Tailwind 도 못 보는 클래스라
   이미 프로덕션에서 깨져 있는 것이지, 이 리포트에서만 빠지는 것이 아니다.
-- Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다.
+- Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다. 그건 별도의 major 라인이며, 1.x 는 Tailwind 3.3–3.4 에 머문다.
   발견한 버전을 명시한 메시지와 함께 종료 코드 2 로 끝난다 (*요구 사항 & 호환성* 참고).
 - "unknown" 클래스(커스텀 CSS, 일반 단어, 오타)는 기본적으로 보고하지 않는다 — 유틸리티 모양인
   것(오타, 죽은 토큰)은 `--unknown`, 원시 목록 전체는 `--unknown-all` 참고.
@@ -408,6 +408,27 @@ npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.
 tw-ghost 는 **대상 프로젝트에 설치된 `tailwindcss`** 를 공개 진입점 `loadConfig` / `resolveConfig`
 와 PostCSS 로 구동한다. 아래 내용은 모두 거기서 따라 나온다.
 
+### 무엇이 안정적인가
+
+tw-ghost 는 1.0 을 향해 가고 있고, 1.0 의 뜻은 하나다: **이 표면은 major 버전 없이 깨지지 않는다.**
+
+- CLI: 문서화된 모든 플래그와 그 의미, 종료 코드 `0` / `1` / `2`.
+- `--json`: 키는 minor 에서 추가될 수 있고, major 가 아니면 삭제되거나 타입이 바뀌지 않는다.
+- `--format sarif`: 위에 문서화된 run/result 모양의 유효한 SARIF 2.1.0, `automationDetails.id` 의 도출
+  규칙, 생성 워크플로의 업로드 게이트 계약.
+- `--format github`: occurrence 당 `::error` 하나, `GITHUB_WORKSPACE` 기준 상대 경로의 `file=`.
+- ESLint 룰 `tw-ghost/no-ghost-class` 와 그 옵션.
+- **이 문서에 적힌 대로의** 프로그래매틱 API — *프로그래매틱 API* 절 전체, 각 절에서 이름을 밝힌
+  init·SARIF·fix-map 함수들, `createLiveClassifier`. 여기 문서화되지 않은 심볼은 내부용이며 이 계약 밖이다:
+  어느 릴리스에서든 바뀔 수 있다.
+
+**폐기.** 안정 표면에서 무언가를 빼려면 먼저 폐기 표시를 한다 — 가능한 곳엔 런타임 경고, 여기와
+CHANGELOG 에 메모 — 그리고 최소 한 minor 릴리스 뒤 major 에서 제거한다.
+
+**Tailwind 라인.** 1.x 라인은 Tailwind CSS 3.3–3.4 다. Tailwind v4 에는 `tailwind.config.*` 가 없어
+"생성해서 비교" 하는 코어를 다른 API 위에 다시 세워야 한다. 그렇게 된다면 그건 새 major 라인이고,
+1.x 의 minor 가 아니다.
+
 ### 지원 매트릭스
 
 | 영역 | 상태 | 비고 |
@@ -563,7 +584,7 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 더 긴 클래스 안에 들어 있는 후보(`md:text-sm`, `legacy-text-sm`, `p-30`, `!p-3`, `-p-3`, `p-3.5`,
 `text-sm/50`)는 절대 세지 않는다.
 
-`--json` (형태는 패치 릴리스 간에 안정적이다. 키가 추가될 수는 있어도 제거되지는 않는다):
+`--json` (모양은 **minor** 릴리스 간에 안정적이다: 키는 minor 에서 추가될 수 있고, major 가 아니면 삭제되거나 타입이 바뀌지 않는다):
 
 ```json
 {
