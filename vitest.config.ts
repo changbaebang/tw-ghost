@@ -7,12 +7,17 @@ import { defaultExclude, defineConfig } from 'vitest/config';
 // trip, so the ceiling is raised — but only here.
 const integration = ['test/cli.test.ts', 'test/preflight.test.ts', 'test/live.test.ts'];
 
+// NO_COLOR is pinned for every test, and inherited by the CLI processes the integration tests spawn.
+// picocolors turns colour on when `CI` is in the environment, which is true on a runner and false
+// for a local spawn — so an assertion spanning a coloured prefix passed locally and failed in CI.
+// With colour off everywhere, stderr is the same string in both places.
 export default defineConfig({
   test: {
     projects: [
       {
         test: {
           name: 'unit',
+          env: { NO_COLOR: '1' },
           include: ['test/**/*.test.ts'],
           exclude: [...defaultExclude, ...integration],
           // No timeout override: a unit test or hook that deadlocks must surface at vitest's
@@ -22,6 +27,7 @@ export default defineConfig({
       {
         test: {
           name: 'integration',
+          env: { NO_COLOR: '1' },
           include: integration,
           // ~6x the slowest measured windows-latest case, and bounded — unlike the global 60 s this
           // replaces. hookTimeout stays at the default: these suites do their setup inside the test.
