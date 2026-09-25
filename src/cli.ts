@@ -178,6 +178,9 @@ async function runMany(
     for (const entry of multi.configs) {
       if (entry.error !== undefined) continue;
       const gh = formatGithub(entry, { maxAnnotations: 0 }); // uncapped per config
+      for (const warning of gh.warnings) {
+        process.stderr.write(`${pc.yellow('tw-ghost: warning:')} [${entry.config}] ${warning}\n`);
+      }
       if (gh.output) lines.push(...gh.output.split('\n'));
       ghosts += entry.ghosts.length;
       occurrences += entry.ghosts.reduce((n, g) => n + g.count, 0);
@@ -389,6 +392,9 @@ async function main(): Promise<never> {
     output = `${JSON.stringify({ version, ...report }, null, 2)}\n`;
   } else if (format === 'github') {
     const gh = formatGithub(report, { maxAnnotations });
+    for (const warning of gh.warnings) {
+      process.stderr.write(`${pc.yellow('tw-ghost: warning:')} ${warning}\n`);
+    }
     process.stderr.write(`${gh.summary}\n`);
     output = gh.output === '' ? '' : `${gh.output}\n`;
   } else if (format === 'sarif') {

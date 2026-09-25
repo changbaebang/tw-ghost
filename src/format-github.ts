@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { Finding, GhostFinding, Report } from './analyze.js';
 import type { Location } from './extract.js';
-import { climbsOut, toPosix } from './paths.js';
+import { climbsOut, isOutsideRoot, outsideRootWarning, toPosix } from './paths.js';
 
 /**
  * GitHub Actions workflow-command output (`--format github`): one `::error` annotation per ghost
@@ -30,6 +30,8 @@ export interface GithubFormatResult {
   summary: string;
   /** Annotations that did not fit under `maxAnnotations`. */
   omitted: number;
+  /** Annotations whose file left the scanned root, if any — one line for stderr. They are still in `output`. */
+  warnings: string[];
 }
 
 export const DEFAULT_MAX_ANNOTATIONS = 50;
@@ -84,7 +86,12 @@ export function formatGithub(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const workspace = options.workspace ?? process.env.GITHUB_WORKSPACE;
   const max = options.maxAnnotations ?? DEFAULT_MAX_ANNOTATIONS;
-  const file = (loc: Location): string => relativizeFile(loc.file, cwd, workspace);
+  const outsideRoot = new Map<string, number>();
+  const file = (loc: Location): string => {
+    const rel = relativizeFile(loc.file, cwd, workspace);
+    if (isOutsideRoot(rel)) outsideRoot.set(rel, (outsideRoot.get(rel) ?? 0) + 1);
+    return rel;
+  };
 
   const lines: string[] = [];
   for (const g of report.ghosts) {
@@ -110,5 +117,6 @@ export function formatGithub(
     output: kept.join('\n'),
     summary: `tw-ghost: ${plural(report.ghosts.length, 'ghost class', 'ghost classes')}, ${plural(occurrences, 'occurrence')}`,
     omitted,
+    warnings: outsideRoot.size > 0 ? [outsideRootWarning(outsideRoot, 'github')] : [],
   };
 }

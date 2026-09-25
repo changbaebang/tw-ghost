@@ -71,7 +71,7 @@ export default {
   참고) 모두 실제 CSS 출력으로 판정한다. CLI 는 Biome / oxlint 팀을 위해 린터 독립적으로 남는다.
 - 런타임에 동적으로 조립되는 클래스(`` `text-${size}` ``)는 찾지 못한다. Tailwind 도 못 보는 클래스라
   이미 프로덕션에서 깨져 있는 것이지, 이 리포트에서만 빠지는 것이 아니다.
-- Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다.
+- Tailwind v4(CSS-first 설정, `tailwind.config.js` 없음)와 3.3 미만의 Tailwind 는 지원하지 않는다. 그건 별도의 major 라인이며, 1.x 는 Tailwind 3.3–3.4 에 머문다.
   발견한 버전을 명시한 메시지와 함께 종료 코드 2 로 끝난다 (*요구 사항 & 호환성* 참고).
 - "unknown" 클래스(커스텀 CSS, 일반 단어, 오타)는 기본적으로 보고하지 않는다 — 유틸리티 모양인
   것(오타, 죽은 토큰)은 `--unknown`, 원시 목록 전체는 `--unknown-all` 참고.
@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npx tw-ghost --format sarif > tw-ghost.sarif
       - if: always() # 유령이 있으면 종료 코드 1 이지만 결과는 올린다
@@ -320,7 +320,7 @@ PowerShell 이 된다.
 stdout 은 파일로 넘어가므로 한 줄 요약
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`)은 stderr 로 나간다.
 
-Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
+Node ≥ 22 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
 `postcss` ^8 은 *선택적* peer 다: 설정 파일 옆에 `postcss` 가 설치되어 있으면 그것을 쓰고, 없으면
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
 내 환경에 맞는지 확실하지 않다면 `npx tw-ghost --env` 를 실행한다 — 해석한 결과를 출력하거나,
@@ -408,6 +408,27 @@ npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.
 tw-ghost 는 **대상 프로젝트에 설치된 `tailwindcss`** 를 공개 진입점 `loadConfig` / `resolveConfig`
 와 PostCSS 로 구동한다. 아래 내용은 모두 거기서 따라 나온다.
 
+### 무엇이 안정적인가
+
+tw-ghost 는 1.0 을 향해 가고 있고, 1.0 의 뜻은 하나다: **이 표면은 major 버전 없이 깨지지 않는다.**
+
+- CLI: 문서화된 모든 플래그와 그 의미, 종료 코드 `0` / `1` / `2`.
+- `--json`: 키는 minor 에서 추가될 수 있고, major 가 아니면 삭제되거나 타입이 바뀌지 않는다.
+- `--format sarif`: 위에 문서화된 run/result 모양의 유효한 SARIF 2.1.0, `automationDetails.id` 의 도출
+  규칙, 생성 워크플로의 업로드 게이트 계약.
+- `--format github`: occurrence 당 `::error` 하나, `GITHUB_WORKSPACE` 기준 상대 경로의 `file=`.
+- ESLint 룰 `tw-ghost/no-ghost-class` 와 그 옵션.
+- **이 문서에 적힌 대로의** 프로그래매틱 API — *프로그래매틱 API* 절 전체, 각 절에서 이름을 밝힌
+  init·SARIF·fix-map 함수들, `createLiveClassifier`. 여기 문서화되지 않은 심볼은 내부용이며 이 계약 밖이다:
+  어느 릴리스에서든 바뀔 수 있다.
+
+**폐기.** 안정 표면에서 무언가를 빼려면 먼저 폐기 표시를 한다 — 가능한 곳엔 런타임 경고, 여기와
+CHANGELOG 에 메모 — 그리고 최소 한 minor 릴리스 뒤 major 에서 제거한다.
+
+**Tailwind 라인.** 1.x 라인은 Tailwind CSS 3.3–3.4 다. Tailwind v4 에는 `tailwind.config.*` 가 없어
+"생성해서 비교" 하는 코어를 다른 API 위에 다시 세워야 한다. 그렇게 된다면 그건 새 major 라인이고,
+1.x 의 minor 가 아니다.
+
 ### 지원 매트릭스
 
 | 영역 | 상태 | 비고 |
@@ -416,7 +437,7 @@ tw-ghost 는 **대상 프로젝트에 설치된 `tailwindcss`** 를 공개 진�
 | Tailwind CSS 3.0 – 3.2 | ❌ 종료 코드 2 | 3.3.0 이전에는 `tailwindcss/loadConfig` 가 없다. 메시지: `found 3.2.7, need >=3.3.0`. |
 | Tailwind CSS 4.x | ❌ 종료 코드 2 | CSS-first, JS 설정 없음, 생성 모델이 다르다. tw-ghost 는 v3 전용이다. |
 | Tailwind CSS ≤ 2.x | ❌ 종료 코드 2 | tw-ghost 가 필요로 하는 진입점이 아직 없던 시절이다. |
-| Node.js | ≥ 20 | CI 는 Linux 와 Windows 모두에서 20 과 22 를 실행하고, 개발에는 24 를 쓴다. Node ≥ 22.12 에서 CommonJS 패키지 안의 `.ts` 설정은 Tailwind 로더가 넘겨받기 전에 *Node* 가 `Warning: Failed to load the ES module` 한 줄을 출력한다 — 무해하다. |
+| Node.js | ≥ 22 | CI 는 Linux 와 Windows 모두에서 22 와 24 를 실행한다. Node 20 은 2026-04-30 에 EOL 이 되어 지원하지 않는다. Node ≥ 22.12 에서 CommonJS 패키지 안의 `.ts` 설정은 Tailwind 로더가 넘겨받기 전에 *Node* 가 `Warning: Failed to load the ES module` 한 줄을 출력한다 — 무해하다. |
 | 설정 파일 | `tailwind.config.{ts,js,cjs,mjs}` | cwd 에서 위로 올라가며 자동 탐지하거나 `--config`. CJS `module.exports`, ESM `export default`, TypeScript(`satisfies Config`, `import type`)를 Tailwind 자체의 jiti 기반 로더로 읽는다. 설정 안의 `import.meta` 는 Tailwind ≥ 3.4.2 (또는 Node ≥ 22.12) 가 필요하다. **함수**를 export 하는 설정은 거부한다 (Tailwind v3 도 지원하지 않는다). |
 | `content` | 배열 또는 `{ files, relative, transform, extract }` | **문자열 glob 만** 스캔하며 설정 파일 디렉터리 기준으로 해석한다. `{ raw }` 항목은 무시. `transform` / `extract` 는 **적용하지 않는다**(경고). `relative: true` 는 tw-ghost 에 아무 변화가 없다 — 원래 그렇게 해석한다. |
 | 설정 기능 | `presets`, `plugins`(`addUtilities` / `addComponents` / `addVariant` / `matchUtilities`), `prefix`, `separator`, `important`(불리언 또는 셀렉터), `darkMode`, `safelist`(문자열과 `{ pattern }`), `corePlugins`(객체 또는 배열), `theme` 교체 / `extend`, 함수형 테마 섹션(`({ theme }) => …`) | 설정을 해석하고 실행하는 것이 내 Tailwind 이므로 전부 반영된다. tw-ghost 는 아무것도 재구현하지 않는다. 플러그인이 추가한 클래스에는 `prefix` 가 붙고(Tailwind 동작), 테마에서 죽은 클래스는 safelist 에 넣어도 여전히 유령이다 — safelist 는 후보를 추가할 뿐 CSS 를 만들어 내지 못한다. |
@@ -426,7 +447,7 @@ tw-ghost 는 **대상 프로젝트에 설치된 `tailwindcss`** 를 공개 진�
 | `postcss` | 선택적 peer | 설정에서 해석되면 프로젝트의 `postcss`, 아니면 `tailwindcss` 가 의존하는 것(`tailwindcss` 만 닿는 레이아웃으로 검증). |
 | CSS 의 `@config` (Tailwind ≥ 3.2) | 읽지 않음 | tw-ghost 는 설정 **파일**이 필요하다. `@config` 가 가리키는 파일을 `--config` 로 지정한다. |
 | Linux / macOS | ✅ 지원 | CI 는 `ubuntu-latest` 에서 실행하고, 개발은 macOS 에서 한다. |
-| Windows | ✅ 지원 | CI 가 `windows-latest` × Node 20 / 22 에서 전체 스위트를 돌린다(lint, typecheck, build, 테스트, `npm pack` — Linux 와 같은 작업). glob 은 어느 구분자든 받는다 — glob 엔진이 `\` 를 이스케이프로 읽기 때문에 `src\**\*.tsx` 는 POSIX 형태로 바꾼다 — 보고 경로는 항상 `/` 로 정규화해 플랫폼간 어노테이션이 같다. `--fix-map --write` 는 줄마다 원래 줄바꿈을 그대로 유지하므로 CRLF/LF 가 섞인 파일을 통째로 다시 쓰지 않고, UTF-8 BOM 은 보존하며 컬럼 수에 넣지 않는다. **주의:** `--config` 와 위치 인자 glob 에 `\` 를 써도 되지만, `!negation` 은 PowerShell 에서 따옴표로 묶어야 하고, 리터럴 `[` · `(` 를 포함하는 패턴은 Windows 에서 `\` 로 이스케이프할 수 없다(거기서 `\` 는 구분자다) — 더 넓은 glob 과 `--ignore` 를 쓴다. |
+| Windows | ✅ 지원 | CI 가 `windows-latest` × Node 22 / 24 에서 전체 스위트를 돌린다(lint, typecheck, build, 테스트, `npm pack` — Linux 와 같은 작업). glob 은 어느 구분자든 받는다 — glob 엔진이 `\` 를 이스케이프로 읽기 때문에 `src\**\*.tsx` 는 POSIX 형태로 바꾼다 — 보고 경로는 항상 `/` 로 정규화해 플랫폼간 어노테이션이 같다. `--fix-map --write` 는 줄마다 원래 줄바꿈을 그대로 유지하므로 CRLF/LF 가 섞인 파일을 통째로 다시 쓰지 않고, UTF-8 BOM 은 보존하며 컬럼 수에 넣지 않는다. **주의:** `--config` 와 위치 인자 glob 에 `\` 를 써도 되지만, `!negation` 은 PowerShell 에서 따옴표로 묶어야 하고, 리터럴 `[` · `(` 를 포함하는 패턴은 Windows 에서 `\` 로 이스케이프할 수 없다(거기서 `\` 는 구분자다) — 더 넓은 glob 과 `--ignore` 를 쓴다. |
 
 ### 스캔하는 것 / 하지 않는 것
 
@@ -563,7 +584,7 @@ scanned 2 files, 49 candidates (10 ok, 5 ghost, 0 unknown-variant, 34 unknown of
 더 긴 클래스 안에 들어 있는 후보(`md:text-sm`, `legacy-text-sm`, `p-30`, `!p-3`, `-p-3`, `p-3.5`,
 `text-sm/50`)는 절대 세지 않는다.
 
-`--json` (형태는 패치 릴리스 간에 안정적이다. 키가 추가될 수는 있어도 제거되지는 않는다):
+`--json` (모양은 **minor** 릴리스 간에 안정적이다: 키는 minor 에서 추가될 수 있고, major 가 아니면 삭제되거나 타입이 바뀌지 않는다):
 
 ```json
 {
@@ -919,7 +940,6 @@ CHANGELOG 한 줄이 된다.
 
 ## 로드맵
 
-- SARIF 출력.
 - 파일 단위 `// tw-ghost-ignore` 주석.
 - 경로 범위를 지정한 `--fix-map` (공유 맵으로 모노레포의 앱 하나만 고치기).
 - CSS 파일 내 `@apply` 의 제대로 된 처리 (지금은 glob 에 포함되면 일반 텍스트로 스캔된다).

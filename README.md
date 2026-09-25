@@ -161,7 +161,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npx tw-ghost --format sarif > tw-ghost.sarif
       - if: always() # ghosts exit 1; upload the findings anyway
@@ -329,7 +329,7 @@ A one-line summary
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`) goes to stderr, since
 stdout is redirected into the file.
 
-Requires Node ≥ 20 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
+Requires Node ≥ 22 and `tailwindcss` 3.3–3.4 installed in the target project (peer dependency).
 `postcss` ^8 is an *optional* peer: tw-ghost uses the project's `postcss` when one is installed
 next to the config and otherwise falls back to the `postcss` that `tailwindcss` itself depends on,
 so a plain `tailwindcss` install is enough. Not sure it fits your setup? Run `npx tw-ghost --env`
@@ -420,6 +420,29 @@ npx tw-ghost --config 'apps/*/tailwind.config.ts' --config packages/ui/tailwind.
 tw-ghost drives **your project's own `tailwindcss`** through its public `loadConfig` /
 `resolveConfig` entry points and PostCSS. Everything below follows from that.
 
+### What is stable
+
+tw-ghost is on the road to 1.0, and 1.0 means one thing: **these surfaces do not break without a major
+version.**
+
+- The CLI: every documented flag, its meaning, and the exit codes `0` / `1` / `2`.
+- `--json`: keys may be added in a minor; none removed or re-typed outside a major.
+- `--format sarif`: valid SARIF 2.1.0 with the run/result shape documented above; `automationDetails.id`
+  derivation and the upload-gate contract of the generated workflow.
+- `--format github`: one `::error` per occurrence, `file=` repo-relative under `GITHUB_WORKSPACE`.
+- The ESLint rule `tw-ghost/no-ghost-class` and its options.
+- The programmatic API **as documented on this page** — everything under *Programmatic API*, the init,
+  SARIF and fix-map functions named in their sections, and `createLiveClassifier`. A symbol that is not
+  documented here is internal and outside this contract: it can change in any release.
+
+**Deprecation.** Something leaving the stable surface is first deprecated — a runtime warning where
+one is possible, a note here and in the changelog — for at least one minor release before a major
+removes it.
+
+**Tailwind line.** The 1.x line is Tailwind CSS 3.3–3.4. Tailwind v4 has no `tailwind.config.*`, so
+the "generate and compare" core would have to be rebuilt on a different API; if that happens it is a
+new major line, not a 1.x minor.
+
 ### Support matrix
 
 | Area | Status | Notes |
@@ -428,7 +451,7 @@ tw-ghost drives **your project's own `tailwindcss`** through its public `loadCon
 | Tailwind CSS 3.0 – 3.2 | ❌ exit 2 | No `tailwindcss/loadConfig` before 3.3.0. Message: `found 3.2.7, need >=3.3.0`. |
 | Tailwind CSS 4.x | ❌ exit 2 | CSS-first, no JS config, different generation model. tw-ghost is v3-only. |
 | Tailwind CSS ≤ 2.x | ❌ exit 2 | Predates the entry points tw-ghost needs. |
-| Node.js | ≥ 20 | CI runs 20 and 22 on both Linux and Windows; 24 is used in development. On Node ≥ 22.12 a `.ts` config inside a CommonJS package makes *Node* print one `Warning: Failed to load the ES module` line before Tailwind's loader takes over — harmless. |
+| Node.js | ≥ 22 | CI runs 22 and 24 on both Linux and Windows. Node 20 reached end-of-life on 2026-04-30 and is not supported. On Node ≥ 22.12 a `.ts` config inside a CommonJS package makes *Node* print one `Warning: Failed to load the ES module` line before Tailwind's loader takes over — harmless. |
 | Config file | `tailwind.config.{ts,js,cjs,mjs}` | Auto-detected by walking up from cwd, or `--config`. CJS `module.exports`, ESM `export default`, TypeScript (`satisfies Config`, `import type`) via Tailwind's own jiti-based loader. `import.meta` in a config needs Tailwind ≥ 3.4.2 (or Node ≥ 22.12). A config that exports a **function** is rejected (Tailwind v3 does not support that either). |
 | `content` | array or `{ files, relative, transform, extract }` | Only **string globs** are scanned, resolved from the config file's directory; `{ raw }` entries are ignored. `transform` / `extract` are **not applied** (warning). `relative: true` changes nothing for tw-ghost — that is already how it resolves. |
 | Config features | `presets`, `plugins` (`addUtilities` / `addComponents` / `addVariant` / `matchUtilities`), `prefix`, `separator`, `important` (boolean or selector), `darkMode`, `safelist` (strings and `{ pattern }`), `corePlugins` (object or array), `theme` replace / `extend`, theme sections as functions (`({ theme }) => …`) | All honoured because your Tailwind resolves and runs the config; tw-ghost never reimplements them. Note that plugin-added classes get your `prefix` (Tailwind behaviour), and a safelisted class that is dead in your theme is still a ghost — the safelist only adds candidates, it cannot conjure CSS. |
@@ -438,7 +461,7 @@ tw-ghost drives **your project's own `tailwindcss`** through its public `loadCon
 | `postcss` | optional peer | Your project's `postcss` if resolvable from the config, otherwise the one `tailwindcss` depends on (verified with a layout where only `tailwindcss` is reachable). |
 | `@config` in CSS (Tailwind ≥ 3.2) | not read | tw-ghost needs the config **file**; point `--config` at the same file your `@config` directive names. |
 | Linux / macOS | ✅ supported | CI runs `ubuntu-latest`; development is on macOS. |
-| Windows | ✅ supported | CI runs the full suite on `windows-latest` × Node 20 and 22 (same jobs as Linux: lint, typecheck, build, tests, `npm pack`). Globs accept either separator — `src\**\*.tsx` is rewritten to POSIX form, because the glob engine reads `\` as an escape — and reported paths are always normalised to `/`, so annotations match across platforms. `--fix-map --write` keeps each line's own ending, so a mixed CRLF/LF file is not rewritten wholesale, and a UTF-8 BOM is preserved and never counted as a column. **Caveat:** `--config` and positional globs may use `\`, but a `!negation` still has to be quoted away from PowerShell, and a pattern containing a literal `[` or `(` cannot be escaped with `\` on Windows (there `\` is a separator) — use a wider glob plus `--ignore`. |
+| Windows | ✅ supported | CI runs the full suite on `windows-latest` × Node 22 and 24 (same jobs as Linux: lint, typecheck, build, tests, `npm pack`). Globs accept either separator — `src\**\*.tsx` is rewritten to POSIX form, because the glob engine reads `\` as an escape — and reported paths are always normalised to `/`, so annotations match across platforms. `--fix-map --write` keeps each line's own ending, so a mixed CRLF/LF file is not rewritten wholesale, and a UTF-8 BOM is preserved and never counted as a column. **Caveat:** `--config` and positional globs may use `\`, but a `!negation` still has to be quoted away from PowerShell, and a pattern containing a literal `[` or `(` cannot be escaped with `\` on Windows (there `\` is a separator) — use a wider glob plus `--ignore`. |
 
 ### What is scanned / not scanned
 
@@ -577,7 +600,7 @@ Note that `text-sm` has **4** occurrences although the file also contains `md:ho
 occurrences are whole tokens, so a candidate is never counted inside a longer class
 (`md:text-sm`, `legacy-text-sm`, `p-30`, `!p-3`, `-p-3`, `p-3.5`, `text-sm/50`).
 
-`--json` (shape is stable across patch releases; new keys may be added, none removed):
+`--json` (shape is stable across **minor** releases: keys may be added in a minor, never removed or re-typed outside a major):
 
 ```json
 {
@@ -957,13 +980,12 @@ unknowns → 20 listed, of which roughly two thirds were genuine typos or dead t
 
 ## Roadmap
 
-- SARIF output.
 - Per-file `// tw-ghost-ignore` comments.
 - `--fix-map` scoped to a path (fix one app of a monorepo with a shared map).
 - Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
   include them).
 - Cache candidate extraction between runs for very large monorepos.
-- Tailwind v4 support if a comparable "generate and compare" path becomes available.
+- Tailwind v4 support if a comparable "generate and compare" path becomes available. That would be a new major line; 1.x stays on Tailwind 3.3–3.4.
 
 ## Development & release
 
@@ -975,6 +997,13 @@ pnpm lint         # biome check .   (pnpm lint:fix to apply)
 pnpm typecheck    # tsc --noEmit
 pnpm pack:check   # npm pack --dry-run — verify the tarball contents
 ```
+
+Tests pin `NO_COLOR=1` (see `vitest.config.ts`), so stderr assertions read the same string locally and
+on a runner. For anything else that only a runner sets, `CI=1 pnpm test` reproduces it.
+
+`pnpm.overrides` holds the transitive `esbuild` at `^0.28.1` because of a dependabot advisory on 0.27.x. That
+is above `tsup`'s declared `^0.27.0` (`vite` accepts `^0.28`): the build step in CI is the compatibility check, the
+caret is the ceiling, and the override should be dropped as soon as tsup moves its range.
 
 Fixtures live in `test/fixtures/` (`replaced-scale`, `prefix`, `clean`, `variants`, `separator`,
 `count`, `no-content`, `content-transform`), each with its own `tailwind.config.*` that resolves

@@ -537,6 +537,22 @@ describe('cli: several configs', () => {
 });
 
 describe('cli: several configs with --format github', () => {
+  it('warns on stderr, but still annotates, a ghost whose file is outside the scanned root', () => {
+    // Same boundary as the SARIF test: apps/web's content glob reaches ../../packages/shared and
+    // the `run` helper strips GITHUB_WORKSPACE, so that file can only be cwd-relative.
+    const { code, stdout, stderr } = run(
+      ['--format', 'github', '--no-suggestions', '--tailwind', ROOT],
+      path.join(fixture('monorepo'), 'apps/web'),
+    );
+    expect(code).toBe(1);
+    expect(stdout).toContain('file=../../packages/shared/src/Button.tsx'); // kept
+    expect(stderr).toContain('tw-ghost: warning:');
+    expect(stderr).toContain(
+      '1 annotation in 1 file point outside the scanned root (e.g. ../../packages/shared/src/Button.tsx)',
+    );
+    expect(stderr).toContain('appear only in the job log');
+  });
+
   it('streams annotations from every config under one cap and summarizes on stderr', () => {
     const res = run(
       ['--all-configs', '--format', 'github', '--no-suggestions'],
