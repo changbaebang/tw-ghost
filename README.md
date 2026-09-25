@@ -963,6 +963,10 @@ pnpm pack:check   # npm pack --dry-run — verify the tarball contents
 Tests pin `NO_COLOR=1` (see `vitest.config.ts`), so stderr assertions read the same string locally and
 on a runner. For anything else that only a runner sets, `CI=1 pnpm test` reproduces it.
 
+`pnpm.overrides` holds the transitive `esbuild` at `^0.28.1` because of a dependabot advisory on 0.27.x. That
+is above `tsup`'s declared `^0.27.0` (`vite` accepts `^0.28`): the build step in CI is the compatibility check, the
+caret is the ceiling, and the override should be dropped as soon as tsup moves its range.
+
 Fixtures live in `test/fixtures/` (`replaced-scale`, `prefix`, `clean`, `variants`, `separator`,
 `count`, `no-content`, `content-transform`), each with its own `tailwind.config.*` that resolves
 the repository's dev `tailwindcss` 3.4.x. Version preflight tests (`test/preflight.test.ts`)
