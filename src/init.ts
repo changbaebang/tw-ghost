@@ -179,7 +179,7 @@ function installSteps(info: PackageInfo): string {
   const node =
     info.manager === 'bun'
       ? ''
-      : `      - uses: ${ACTIONS.setupNode}\n        with:\n          node-version: 20${cache}\n`;
+      : `      - uses: ${ACTIONS.setupNode}\n        with:\n          node-version: 22${cache}\n`;
   return setup + node + installRun(info, frozen);
 }
 
