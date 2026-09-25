@@ -3,12 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   analyze,
   analyzeMany,
-  configLabel,
   isConfigFailure,
-  isMultiConfigRequest,
   resolveConfigPaths,
   TwGhostConfigError,
 } from '../src/index.js';
+import { configLabel, isMultiConfigRequest } from '../src/multi.js';
 import { fixture } from './helpers.js';
 
 const monorepo = fixture('monorepo');

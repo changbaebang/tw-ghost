@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+
+- **35 runtime exports left the public entry** (`tw-ghost`). The rule is now *exported iff the README names it*,
+  pinned by `test/public-api.test.ts`. None of these was documented in the README; the 0.4.0 notes listed a few
+  (`automationIdFor`, `configLabel`, `isMultiConfigRequest`, `sarifRules`, the `SARIF_*` constants) as programmatic
+  API, and for those this is a breaking change. Removed: `CORE_UTILITY_ROOTS`, `collectRoots`, `DEFAULT_SEPARATOR`,
+  `isPlausibleVariantChain`, `stripModifiers`, `utilityPart`, `utilityRoot`, `describeProject`, `formatEnv`,
+  `isWholeToken`, `replacementFor`, `DEFAULT_MAX_ANNOTATIONS`, `automationIdFor`, `encodeUriPath`, `sarifRules`,
+  `SARIF_MAX_SUGGESTIONS`, `SARIF_SCHEMA_URI`, `SARIF_TOOL_NAME`, `SARIF_URI_BASE_ID`, `SARIF_VERSION`, `GHOST_RULE_ID`,
+  `UNKNOWN_UTILITY_RULE_ID`, `UNKNOWN_VARIANT_RULE_ID`, `ALL_CONFIGS_IGNORE_DIRS`, `configLabel`,
+  `isMultiConfigRequest`, `assertTailwindV3`, `COMPATIBILITY_DOCS`, `contentGlobs`, `contentWarnings`,
+  `MIN_TAILWIND_VERSION`, `SUPPORTED_TAILWIND_RANGE`, `unwrapDefaultExport`, `flattenThemeKeys`,
+  `matchUtilityPrefix`, `withinOneEdit`. Type exports are unchanged.
+  Migration: `automationIdFor(config)` is `` `tw-ghost/${config}` `` with `config` as `ConfigReport.config` reports
+  it; `SARIF_*` values are the literals in the emitted log (`$schema`, `version: "2.1.0"`, `uriBaseId: "%SRCROOT%"`,
+  rule ids `ghost-class` / `unknown-utility-like` / `unknown-variant`); the version range is `tailwindcss` `^3.3.0`
+  as declared in `peerDependencies`. Anything else had no documented use — if you relied on one, open an issue with
+  the use case.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added
