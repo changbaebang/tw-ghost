@@ -47,3 +47,48 @@ export const stripBom = (text: string): string => (text.startsWith(BOM) ? text.s
 /** `[bom, rest]` — keep the BOM aside while rewriting text, then put it back byte-for-byte. */
 export const splitBom = (text: string): [string, string] =>
   text.startsWith(BOM) ? [BOM, text.slice(1)] : ['', text];
+
+const plural = (n: number, word: string, many = `${word}s`): string =>
+  `${n} ${n === 1 ? word : many}`;
+
+/**
+ * `relativizeFile` output that does not stay under the root it was made relative to.
+ *
+ * Two shapes. `../x` is the POSIX case and the same-drive Windows case. When the file is on another
+ * drive or a UNC share, `path.relative` has no common root to climb to and returns the target
+ * **as an absolute path** — `D:/shared/Button.tsx`, `//server/share/Button.tsx` — so a `../` test
+ * alone lets exactly those through. The Windows shapes can be produced on any platform with
+ * `path.win32.relative`, which is how they are tested.
+ */
+export function isOutsideRoot(posixRel: string): boolean {
+  return (
+    climbsOut(posixRel) ||
+    path.win32.isAbsolute(posixRel) || // `D:/x`, `//server/x`, and `/x`
+    path.posix.isAbsolute(posixRel)
+  );
+}
+
+/**
+ * One stderr line for findings whose path left the scanned root. Both formats keep the finding —
+ * a ghost outside the root is still a ghost — and name what the consumer cannot do with it.
+ * `outside` maps each such relativized path to how many findings point at it.
+ */
+export function outsideRootWarning(
+  outside: ReadonlyMap<string, number>,
+  kind: 'sarif' | 'github',
+): string {
+  const count = [...outside.values()].reduce((n, c) => n + c, 0);
+  const [example] = outside.keys();
+  const what = kind === 'sarif' ? plural(count, 'SARIF result') : plural(count, 'annotation');
+  const cost =
+    kind === 'sarif'
+      ? 'Code scanning cannot map them to a repository file, and upload-sarif may fingerprint them ' +
+        'from whatever sits at that path.'
+      : 'GitHub cannot attach an annotation to a file outside the repository, so these appear only ' +
+        'in the job log.';
+  return (
+    `${what} in ${plural(outside.size, 'file')} point outside the scanned root (e.g. ${example}). ` +
+    `${cost} A file outside the repository cannot be represented; for one inside it, run from the ` +
+    `repository root or set GITHUB_WORKSPACE so the path becomes repo-relative.`
+  );
+}

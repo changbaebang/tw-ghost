@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npx tw-ghost --format sarif > tw-ghost.sarif
       - if: always() # 유령이 있으면 종료 코드 1 이지만 결과는 올린다
@@ -320,7 +320,7 @@ PowerShell 이 된다.
 stdout 은 파일로 넘어가므로 한 줄 요약
 (`tw-ghost: 5 ghost classes, 8 occurrences → 8 SARIF results in 1 run`)은 stderr 로 나간다.
 
-Node ≥ 20 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
+Node ≥ 22 과 대상 프로젝트에 설치된 `tailwindcss` 3.3–3.4 (peer dependency) 가 필요하다.
 `postcss` ^8 은 *선택적* peer 다: 설정 파일 옆에 `postcss` 가 설치되어 있으면 그것을 쓰고, 없으면
 `tailwindcss` 자신이 의존하는 `postcss` 로 대체하므로 `tailwindcss` 만 설치되어 있어도 충분하다.
 내 환경에 맞는지 확실하지 않다면 `npx tw-ghost --env` 를 실행한다 — 해석한 결과를 출력하거나,
@@ -437,7 +437,7 @@ CHANGELOG 에 메모 — 그리고 최소 한 minor 릴리스 뒤 major 에서 �
 | Tailwind CSS 3.0 – 3.2 | ❌ 종료 코드 2 | 3.3.0 이전에는 `tailwindcss/loadConfig` 가 없다. 메시지: `found 3.2.7, need >=3.3.0`. |
 | Tailwind CSS 4.x | ❌ 종료 코드 2 | CSS-first, JS 설정 없음, 생성 모델이 다르다. tw-ghost 는 v3 전용이다. |
 | Tailwind CSS ≤ 2.x | ❌ 종료 코드 2 | tw-ghost 가 필요로 하는 진입점이 아직 없던 시절이다. |
-| Node.js | ≥ 20 | CI 는 Linux 와 Windows 모두에서 20 과 22 를 실행하고, 개발에는 24 를 쓴다. Node ≥ 22.12 에서 CommonJS 패키지 안의 `.ts` 설정은 Tailwind 로더가 넘겨받기 전에 *Node* 가 `Warning: Failed to load the ES module` 한 줄을 출력한다 — 무해하다. |
+| Node.js | ≥ 22 | CI 는 Linux 와 Windows 모두에서 22 와 24 를 실행한다. Node 20 은 2026-04-30 에 EOL 이 되어 지원하지 않는다. Node ≥ 22.12 에서 CommonJS 패키지 안의 `.ts` 설정은 Tailwind 로더가 넘겨받기 전에 *Node* 가 `Warning: Failed to load the ES module` 한 줄을 출력한다 — 무해하다. |
 | 설정 파일 | `tailwind.config.{ts,js,cjs,mjs}` | cwd 에서 위로 올라가며 자동 탐지하거나 `--config`. CJS `module.exports`, ESM `export default`, TypeScript(`satisfies Config`, `import type`)를 Tailwind 자체의 jiti 기반 로더로 읽는다. 설정 안의 `import.meta` 는 Tailwind ≥ 3.4.2 (또는 Node ≥ 22.12) 가 필요하다. **함수**를 export 하는 설정은 거부한다 (Tailwind v3 도 지원하지 않는다). |
 | `content` | 배열 또는 `{ files, relative, transform, extract }` | **문자열 glob 만** 스캔하며 설정 파일 디렉터리 기준으로 해석한다. `{ raw }` 항목은 무시. `transform` / `extract` 는 **적용하지 않는다**(경고). `relative: true` 는 tw-ghost 에 아무 변화가 없다 — 원래 그렇게 해석한다. |
 | 설정 기능 | `presets`, `plugins`(`addUtilities` / `addComponents` / `addVariant` / `matchUtilities`), `prefix`, `separator`, `important`(불리언 또는 셀렉터), `darkMode`, `safelist`(문자열과 `{ pattern }`), `corePlugins`(객체 또는 배열), `theme` 교체 / `extend`, 함수형 테마 섹션(`({ theme }) => …`) | 설정을 해석하고 실행하는 것이 내 Tailwind 이므로 전부 반영된다. tw-ghost 는 아무것도 재구현하지 않는다. 플러그인이 추가한 클래스에는 `prefix` 가 붙고(Tailwind 동작), 테마에서 죽은 클래스는 safelist 에 넣어도 여전히 유령이다 — safelist 는 후보를 추가할 뿐 CSS 를 만들어 내지 못한다. |
@@ -447,7 +447,7 @@ CHANGELOG 에 메모 — 그리고 최소 한 minor 릴리스 뒤 major 에서 �
 | `postcss` | 선택적 peer | 설정에서 해석되면 프로젝트의 `postcss`, 아니면 `tailwindcss` 가 의존하는 것(`tailwindcss` 만 닿는 레이아웃으로 검증). |
 | CSS 의 `@config` (Tailwind ≥ 3.2) | 읽지 않음 | tw-ghost 는 설정 **파일**이 필요하다. `@config` 가 가리키는 파일을 `--config` 로 지정한다. |
 | Linux / macOS | ✅ 지원 | CI 는 `ubuntu-latest` 에서 실행하고, 개발은 macOS 에서 한다. |
-| Windows | ✅ 지원 | CI 가 `windows-latest` × Node 20 / 22 에서 전체 스위트를 돌린다(lint, typecheck, build, 테스트, `npm pack` — Linux 와 같은 작업). glob 은 어느 구분자든 받는다 — glob 엔진이 `\` 를 이스케이프로 읽기 때문에 `src\**\*.tsx` 는 POSIX 형태로 바꾼다 — 보고 경로는 항상 `/` 로 정규화해 플랫폼간 어노테이션이 같다. `--fix-map --write` 는 줄마다 원래 줄바꿈을 그대로 유지하므로 CRLF/LF 가 섞인 파일을 통째로 다시 쓰지 않고, UTF-8 BOM 은 보존하며 컬럼 수에 넣지 않는다. **주의:** `--config` 와 위치 인자 glob 에 `\` 를 써도 되지만, `!negation` 은 PowerShell 에서 따옴표로 묶어야 하고, 리터럴 `[` · `(` 를 포함하는 패턴은 Windows 에서 `\` 로 이스케이프할 수 없다(거기서 `\` 는 구분자다) — 더 넓은 glob 과 `--ignore` 를 쓴다. |
+| Windows | ✅ 지원 | CI 가 `windows-latest` × Node 22 / 24 에서 전체 스위트를 돌린다(lint, typecheck, build, 테스트, `npm pack` — Linux 와 같은 작업). glob 은 어느 구분자든 받는다 — glob 엔진이 `\` 를 이스케이프로 읽기 때문에 `src\**\*.tsx` 는 POSIX 형태로 바꾼다 — 보고 경로는 항상 `/` 로 정규화해 플랫폼간 어노테이션이 같다. `--fix-map --write` 는 줄마다 원래 줄바꿈을 그대로 유지하므로 CRLF/LF 가 섞인 파일을 통째로 다시 쓰지 않고, UTF-8 BOM 은 보존하며 컬럼 수에 넣지 않는다. **주의:** `--config` 와 위치 인자 glob 에 `\` 를 써도 되지만, `!negation` 은 PowerShell 에서 따옴표로 묶어야 하고, 리터럴 `[` · `(` 를 포함하는 패턴은 Windows 에서 `\` 로 이스케이프할 수 없다(거기서 `\` 는 구분자다) — 더 넓은 glob 과 `--ignore` 를 쓴다. |
 
 ### 스캔하는 것 / 하지 않는 것
 
@@ -925,7 +925,6 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
 
 ## 로드맵
 
-- SARIF 출력.
 - 파일 단위 `// tw-ghost-ignore` 주석.
 - 경로 범위를 지정한 `--fix-map` (공유 맵으로 모노레포의 앱 하나만 고치기).
 - CSS 파일 내 `@apply` 의 제대로 된 처리 (지금은 glob 에 포함되면 일반 텍스트로 스캔된다).
