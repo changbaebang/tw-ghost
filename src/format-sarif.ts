@@ -5,7 +5,10 @@ import type { Location } from './extract.js';
 // GITHUB_WORKSPACE, else cwd-relative. Reused so both CI formats agree on every path.
 import { relativizeFile } from './format-github.js';
 import { type ConfigReport, isConfigFailure, type MultiReport } from './multi.js';
-import { climbsOut } from './paths.js';
+import { isOutsideRoot, outsideRootWarning } from './paths.js';
+
+export { isOutsideRoot } from './paths.js';
+
 import { VERSION } from './version.js';
 
 /**
@@ -223,40 +226,6 @@ function ghostMessage(g: GhostFinding): string {
   return `${g.class} produces no CSS in this Tailwind config${stock} — try: ${shown.join(', ')}${more}`;
 }
 
-/**
- * `relativizeFile` output that does not stay under the root it was made relative to.
- *
- * Two shapes. `../x` is the POSIX case and the same-drive Windows case. When the file is on another
- * drive or a UNC share, `path.relative` has no common root to climb to and returns the target
- * **as an absolute path** — `D:/shared/Button.tsx`, `//server/share/Button.tsx` — so a `../` test
- * alone lets exactly those through, unwarned, as `D%3A/...`. Exported for its own test: the
- * Windows shapes are produced with `path.win32.relative` on every platform.
- */
-export function isOutsideRoot(posixRel: string): boolean {
-  return (
-    climbsOut(posixRel) ||
-    path.win32.isAbsolute(posixRel) || // `D:/x`, `//server/x`, and `/x`
-    path.posix.isAbsolute(posixRel)
-  );
-}
-
-/**
- * Why an out-of-root uri is worth a warning, in one line. Code scanning keys alerts to repository paths,
- * so it cannot place this one; and `upload-sarif` joins a relative uri onto the source root and
- * fingerprints whatever exists there, which may be a different file than the one scanned.
- */
-function outsideRootWarning(outside: ReadonlyMap<string, number>): string {
-  const results = [...outside.values()].reduce((n, c) => n + c, 0);
-  const [example] = outside.keys();
-  return (
-    `${plural(results, 'SARIF result')} in ${plural(outside.size, 'file')} point outside the ` +
-    `scanned root (e.g. ${example}). Code scanning cannot map them to a repository file, and ` +
-    `upload-sarif may fingerprint them from whatever sits at that path. A file outside the ` +
-    `repository cannot be represented; for one inside it, run from the repository root or set ` +
-    `GITHUB_WORKSPACE so the path becomes repo-relative.`
-  );
-}
-
 interface BuiltRun {
   run: SarifRun;
   /** Relativized paths that escaped the root, with how many results point at each. */
@@ -371,7 +340,7 @@ export function formatSarif(report: Report, options: SarifFormatOptions = {}): S
   return {
     log: { $schema: SARIF_SCHEMA_URI, version: SARIF_VERSION, runs: [run] },
     summary: summaryLine(report.ghosts.length, occurrencesOf(report), [run]),
-    warnings: outsideRoot.size > 0 ? [outsideRootWarning(outsideRoot)] : [],
+    warnings: outsideRoot.size > 0 ? [outsideRootWarning(outsideRoot, 'sarif')] : [],
   };
 }
 
@@ -433,6 +402,6 @@ export function formatSarifMany(
     summary: summaryLine(ghosts, occurrences, runs, reports.length),
     warnings: built
       .filter((b) => b.outsideRoot.size > 0)
-      .map((b) => `[${b.config}] ${outsideRootWarning(b.outsideRoot)}`),
+      .map((b) => `[${b.config}] ${outsideRootWarning(b.outsideRoot, 'sarif')}`),
   };
 }

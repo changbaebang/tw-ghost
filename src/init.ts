@@ -357,7 +357,7 @@ export async function init(options: InitOptions = {}): Promise<InitResult> {
   if (branch !== undefined) workflowOptions.branch = branch;
   // Only pass --config in the workflow when auto-detection would not find the same file: a config
   // at the root is found by walking up from the working directory.
-  if (configRel && configRel.includes('/')) workflowOptions.config = configRel;
+  if (configRel?.includes('/')) workflowOptions.config = configRel;
   files.push(
     await writeIfAbsent(
       root,

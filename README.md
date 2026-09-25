@@ -942,7 +942,6 @@ unknowns → 20 listed, of which roughly two thirds were genuine typos or dead t
 
 ## Roadmap
 
-- SARIF output.
 - Per-file `// tw-ghost-ignore` comments.
 - `--fix-map` scoped to a path (fix one app of a monorepo with a shared map).
 - Proper `@apply` handling in CSS files (today they are scanned as plain text when your globs
@@ -960,6 +959,9 @@ pnpm lint         # biome check .   (pnpm lint:fix to apply)
 pnpm typecheck    # tsc --noEmit
 pnpm pack:check   # npm pack --dry-run — verify the tarball contents
 ```
+
+Tests pin `NO_COLOR=1` (see `vitest.config.ts`), so stderr assertions read the same string locally and
+on a runner. For anything else that only a runner sets, `CI=1 pnpm test` reproduces it.
 
 Fixtures live in `test/fixtures/` (`replaced-scale`, `prefix`, `clean`, `variants`, `separator`,
 `count`, `no-content`, `content-transform`), each with its own `tailwind.config.*` that resolves
