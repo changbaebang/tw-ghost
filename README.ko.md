@@ -755,8 +755,20 @@ export 된다: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify
 ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 함께 제공된다 (`import` 는
 `dist/index.d.ts`, `require` 는 `dist/index.d.cts`, `exports` 조건별로 선택).
 
-**그 목록이 표면의 전부다**: 이 문서에 문서화되지 않은 심볼은 내부용이라 `tw-ghost` 에서 export 되지 않고 어느
-릴리스에서든 바뀔 수 있다. export 집합은 테스트가 고정하고, 그 집합의 변경은 모두 CHANGELOG 한 줄이 된다.
+기능별 함수도 export 된다. 각각은 위의 해당 절에서 설명한다:
+
+- **포매터** — `formatHuman` / `formatHumanMany`, `formatGithub`(`--format github` 가 찍는 것),
+  `formatSarif` / `formatSarifMany`(`--format sarif` 가 찍는 것, 둘 다 `{ log, summary, warnings }` 반환).
+- **fix map** — `draftFixMap`, `parseFixMap`, `applyFixMap` 과 파일 단위 순수 함수 `applyFixMapToText`,
+  `formatFix` — `--fix-map-init` / `--fix-map` 이 하는 일.
+- **스캐폴딩** — `init`, `renderWorkflow`, `detectPackageInfo`, `formatInit` — `tw-ghost init` 이 하는 일.
+- **실시간 판정** — `createLiveClassifier`, ESLint 룰의 엔진.
+- `buildUtilityVocabulary`, `looksUtilityLike` 가 입력으로 받는 것.
+
+**그것이 표면의 전부다.** 이 문서에 이름이 나오지 않는 심볼은 내부용이다: `tw-ghost` 에서 export 되지 않고 어느
+릴리스에서든 바뀔 수 있다. `test/public-api.test.ts` 가 export 집합을 — TypeScript 가 보는 `src/index.ts` 의
+값과 타입 모두 — 고정하고, export 되는 값이 전부 이 문서에 이름이 나오는지도 검사한다. 그 집합의 변경은 모두
+CHANGELOG 한 줄이 된다.
 
 ## 동작 원리
 

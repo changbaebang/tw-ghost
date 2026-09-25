@@ -5,7 +5,12 @@ import { defaultExclude, defineConfig } from 'vitest/config';
 // runner, which overruns vitest's 5 s default; `createLiveClassifier` loads six configs in-process
 // and is the same shape of slow. Splitting the round trip into pieces would stop testing the round
 // trip, so the ceiling is raised — but only here.
-const integration = ['test/cli.test.ts', 'test/preflight.test.ts', 'test/live.test.ts'];
+const integration = [
+  'test/cli.test.ts',
+  'test/preflight.test.ts',
+  'test/live.test.ts',
+  'test/public-api.test.ts', // builds a TypeScript program of src/index.ts
+];
 
 export default defineConfig({
   test: {

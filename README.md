@@ -770,9 +770,22 @@ finds no config. `analyze()` is unchanged.
 `describeEnvironment({ cwd, config, tailwind })` returns what `--env` prints. Lower-level
 pieces are exported too: `loadProject`, `findConfig`, `assertSupportedTailwind`, `classify`, `splitVariants`,
 `looksUtilityLike`, `scanContent`, `unescapeCssIdentifier`, `stockConfigFrom`, `collectClasses`,
-`changedThemeKeys`. **That list is the whole surface**: a symbol not documented on this page is internal, is not
-exported from `tw-ghost`, and can change in any release; the exported set is pinned by a test and every
-change to it is a changelog line. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
+`changedThemeKeys`.
+
+The per-feature functions are exported as well; each is explained in its own section above:
+
+- **Formatters** — `formatHuman` / `formatHumanMany`, `formatGithub` (what `--format github` prints),
+  `formatSarif` / `formatSarifMany` (what `--format sarif` prints; both return `{ log, summary, warnings }`).
+- **Fix maps** — `draftFixMap`, `parseFixMap`, `applyFixMap` and its pure per-file form `applyFixMapToText`,
+  `formatFix` — what `--fix-map-init` / `--fix-map` do.
+- **Scaffolding** — `init`, `renderWorkflow`, `detectPackageInfo`, `formatInit` — what `tw-ghost init` does.
+- **Live verdicts** — `createLiveClassifier`, the engine behind the ESLint rule.
+- `buildUtilityVocabulary`, the input `looksUtilityLike` takes.
+
+**That is the whole surface.** A symbol not named on this page is internal: it is not exported from `tw-ghost`
+and can change in any release. `test/public-api.test.ts` pins the exported set — values *and* types, as
+TypeScript sees `src/index.ts` — and checks that every exported value is named on this page; every change to
+the set is a changelog line. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
 definitions (`dist/index.d.ts` for `import`, `dist/index.d.cts` for `require`, selected per
 `exports` condition).
 
