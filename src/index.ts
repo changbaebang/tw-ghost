@@ -1,9 +1,12 @@
 /**
  * The public entry of `tw-ghost`.
  *
- * Rule: a symbol is exported here **iff** the README documents it. Everything else is internal and
- * may change in any release. `test/public-api.test.ts` pins this list, so a change to the surface
- * is a deliberate diff with a changelog line, never an accident of a refactor.
+ * Rule: a runtime **value** is exported here iff the README names it; everything else is internal and
+ * may change in any release. **Types** are not held to the README — each is reachable from a documented
+ * value's signature, and naming all of them in prose would document nothing — but the set is frozen:
+ * `test/public-api.test.ts` pins values and types alike (as the type checker sees this module) and
+ * checks the values against the README, so a change to either list is a deliberate diff with a
+ * changelog line, never an accident of a refactor.
  */
 export {
   type AnalyzeOptions,

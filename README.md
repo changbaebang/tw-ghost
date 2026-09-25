@@ -805,10 +805,11 @@ The per-feature functions are exported as well; each is explained in its own sec
 - **Live verdicts** — `createLiveClassifier`, the engine behind the ESLint rule.
 - `buildUtilityVocabulary`, the input `looksUtilityLike` takes.
 
-**That is the whole surface.** A symbol not named on this page is internal: it is not exported from `tw-ghost`
-and can change in any release. `test/public-api.test.ts` pins the exported set — values *and* types, as
-TypeScript sees `src/index.ts` — and checks that every exported value is named on this page; every change to
-the set is a changelog line. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
+**That is the whole surface.** A runtime value not named on this page is internal: it is not exported from
+`tw-ghost` and can change in any release. Exported *types* are not listed here one by one — each is reachable
+from the signature of a value above — but their set is frozen too: `test/public-api.test.ts` pins values and
+types alike, as TypeScript sees `src/index.ts`, and checks that every exported value is named on this page.
+Every change to either set is a changelog line. Both ESM (`import`) and CommonJS (`require`) builds ship with their own type
 definitions (`dist/index.d.ts` for `import`, `dist/index.d.cts` for `require`, selected per
 `exports` condition).
 

@@ -786,10 +786,11 @@ ESM(`import`) 과 CommonJS(`require`) 빌드 모두 각자의 타입 정의와 �
 - **실시간 판정** — `createLiveClassifier`, ESLint 룰의 엔진.
 - `buildUtilityVocabulary`, `looksUtilityLike` 가 입력으로 받는 것.
 
-**그것이 표면의 전부다.** 이 문서에 이름이 나오지 않는 심볼은 내부용이다: `tw-ghost` 에서 export 되지 않고 어느
-릴리스에서든 바뀔 수 있다. `test/public-api.test.ts` 가 export 집합을 — TypeScript 가 보는 `src/index.ts` 의
-값과 타입 모두 — 고정하고, export 되는 값이 전부 이 문서에 이름이 나오는지도 검사한다. 그 집합의 변경은 모두
-CHANGELOG 한 줄이 된다.
+**그것이 표면의 전부다.** 이 문서에 이름이 나오지 않는 런타임 값은 내부용이다: `tw-ghost` 에서 export 되지 않고
+어느 릴리스에서든 바뀔 수 있다. export 되는 *타입*은 여기 하나씩 적지 않는다 — 각각은 위 값들의 시그니처에서
+닿을 수 있다 — 하지만 그 집합도 동결된다: `test/public-api.test.ts` 가 TypeScript 가 보는 `src/index.ts` 의 값과
+타입을 모두 고정하고, export 되는 값이 전부 이 문서에 이름이 나오는지 검사한다. 두 집합의 변경은 모두 CHANGELOG
+한 줄이 된다.
 
 ## 동작 원리
 

@@ -6,8 +6,10 @@ import * as api from '../src/index.js';
 import { ROOT } from './helpers.js';
 
 // The public surface of `tw-ghost`, pinned — values and types, as TypeScript sees src/index.ts.
-// Rule (src/index.ts): a symbol is exported iff the README names it. Adding one: document it, add
-// it here, log it. Removing one: that is a major, and this failure is the reminder.
+// Rule (src/index.ts): a runtime value is exported iff the README names it; types are not held to
+// the README (each is reachable from a documented value's signature) but their set is frozen here.
+// Adding a value: document it, add it here, log it. Adding a type: add it here, log it. Removing
+// either: that is a major, and this failure is the reminder.
 const VALUES = [
   'TwGhostConfigError',
   'analyze',
@@ -128,9 +130,9 @@ describe('public API surface', () => {
     expect(surface.types).toEqual([...TYPES].sort());
   });
 
-  // The rule is "exported iff documented", so the list is checked against the README, not only
-  // against itself. Identifiers appear in prose (`name`) and in code blocks (name), hence the
-  // word-boundary match rather than a backtick one.
+  // The README rule is about runtime values, so only VALUES is checked against it; TYPES is frozen
+  // by the checker test above and deliberately not required in prose (47 of 48 are not named there).
+  // Identifiers appear in prose (`name`) and in code blocks (name), hence the word-boundary match.
   it('names every exported value in README.md', () => {
     const readme = readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     const named = (name: string): boolean =>
