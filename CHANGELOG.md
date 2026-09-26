@@ -4,12 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-26
 
-The 1.0 preparation line. Two entries below are breaking (Node floor, public entry), so the next release is a
-minor: **0.5.0**. From there the plan is a soak on 0.5.x with no breaking changes, then a 1.0.0 that is the same
-code with the version and README changed — 1.0 is a statement that the surfaces named under *What is stable* in the
-README do not break without a major, not a feature release.
+The 1.0 preparation release. Two entries below are breaking (the Node floor and the public entry), which is why
+this is a minor on the 0.x line rather than 1.0 itself. From here the plan is to run 0.5.x for real — in CI, on a
+monorepo, through the workflow `tw-ghost init` writes — with no breaking changes, and then ship a 1.0.0 that is
+the same code with the version and README changed. 1.0 is a statement that the surfaces named under *What is
+stable* in the README do not break without a major, not a feature release.
 
 ### Added
 
