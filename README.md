@@ -186,8 +186,8 @@ The log looks like this, trimmed to one result:
       "tool": {
         "driver": {
           "name": "tw-ghost",
-          "version": "0.4.0",
-          "semanticVersion": "0.4.0",
+          "version": "0.5.0",
+          "semanticVersion": "0.5.0",
           "informationUri": "https://github.com/changbaebang/tw-ghost#readme",
           "rules": [
             {
@@ -654,7 +654,7 @@ one), the output stays the single-config document above, byte for byte.
 
 ```json
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "configs": [
     {
       "config": "apps/admin/tailwind.config.js",
